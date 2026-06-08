@@ -14,19 +14,17 @@ async def cmd_smart_mode(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         state_mgr: StateManager, loader: StrategyLoader, perf: PerformanceTracker):
     state = state_mgr.get()
     auto_trade = state.get("auto_trade_enabled", False)
-    hermes_active = state.get("hermes_smart_enabled", False)
     current = loader.active_id or "none"
 
     text = (
-        f"*🧠 SMART MODE*\n\n"
-        f"Auto Trading: {'🟢 ON' if auto_trade else '⚪ OFF'}\n"
-        f"Hermes Smart: {'🟡 Passive' if hermes_active else '⚪ Off'}\n"
+        f"*SMART MODE*\n\n"
+        f"Auto Trading: {'ON' if auto_trade else 'OFF'}\n"
         f"Strategy: `{current}`\n\n"
         f"Pilih aksi atau toggle mode di bawah:"
     )
     await update.message.reply_text(
         text, parse_mode="Markdown",
-        reply_markup=smart_mode_panel_keyboard(auto_trade, current, hermes_active),
+        reply_markup=smart_mode_panel_keyboard(auto_trade, current),
     )
 
 
@@ -39,44 +37,17 @@ async def toggle_auto_trading(update: Update, context: CallbackContext,
     state = state_mgr.get()
     current = not state.get("auto_trade_enabled", False)
     state_mgr.set("auto_trade_enabled", current)
-    hermes_active = state.get("hermes_smart_enabled", False)
     current_strat = loader.active_id or "none"
 
-    label = "🟢 Auto Trading ON" if current else "⚪ Auto Trading OFF"
+    label = "Auto Trading ON" if current else "Auto Trading OFF"
     text = (
-        f"*🧠 SMART MODE*\n\n"
+        f"*SMART MODE*\n\n"
         f"Auto Trading: {label}\n"
-        f"Hermes Smart: {'🟡 Passive' if hermes_active else '⚪ Off'}\n"
         f"Strategy: `{current_strat}`"
     )
     await query.message.edit_text(
         text, parse_mode="Markdown",
-        reply_markup=smart_mode_panel_keyboard(current, current_strat, hermes_active),
-    )
-
-
-# ── Toggle Hermes Smart ───────────────────────────────────────────────────────
-
-async def toggle_hermes_smart(update: Update, context: CallbackContext,
-                             state_mgr: StateManager, loader: StrategyLoader, perf: PerformanceTracker):
-    query = update.callback_query
-    await query.answer()
-    state = state_mgr.get()
-    current = not state.get("hermes_smart_enabled", False)
-    state_mgr.set("hermes_smart_enabled", current)
-    auto_trade = state.get("auto_trade_enabled", False)
-    current_strat = loader.active_id or "none"
-
-    label = "🟡 Hermes: Passive" if current else "⚪ Hermes: Off"
-    text = (
-        f"*🧠 SMART MODE*\n\n"
-        f"Auto Trading: {'🟢 ON' if auto_trade else '⚪ OFF'}\n"
-        f"Hermes Smart: {label}\n"
-        f"Strategy: `{current_strat}`"
-    )
-    await query.message.edit_text(
-        text, parse_mode="Markdown",
-        reply_markup=smart_mode_panel_keyboard(auto_trade, current_strat, current),
+        reply_markup=smart_mode_panel_keyboard(current, current_strat),
     )
 
 
@@ -252,17 +223,15 @@ async def smart_back(update: Update, context: CallbackContext,
     await query.answer()
     state = state_mgr.get()
     auto_trade = state.get("auto_trade_enabled", False)
-    hermes_active = state.get("hermes_smart_enabled", False)
     current = loader.active_id or "none"
     text = (
-        f"*🧠 SMART MODE*\n\n"
-        f"Auto Trading: {'🟢 ON' if auto_trade else '⚪ OFF'}\n"
-        f"Hermes Smart: {'🟡 Passive' if hermes_active else '⚪ Off'}\n"
+        f"*SMART MODE*\n\n"
+        f"Auto Trading: {'ON' if auto_trade else 'OFF'}\n"
         f"Strategy: `{current}`"
     )
     await query.message.edit_text(
         text, parse_mode="Markdown",
-        reply_markup=smart_mode_panel_keyboard(auto_trade, current, hermes_active),
+        reply_markup=smart_mode_panel_keyboard(auto_trade, current),
     )
 
 
@@ -276,10 +245,6 @@ def setup_smart_handlers(app, state_mgr: StateManager, loader: StrategyLoader, p
     app.add_handler(CallbackQueryHandler(
         lambda u, c: toggle_auto_trading(u, c, state_mgr, loader, perf),
         pattern="^smart:toggle_auto$",
-    ))
-    app.add_handler(CallbackQueryHandler(
-        lambda u, c: toggle_hermes_smart(u, c, state_mgr, loader, perf),
-        pattern="^smart:toggle_hermes$",
     ))
     app.add_handler(CallbackQueryHandler(
         lambda u, c: best_strategy(u, c, loader, perf),

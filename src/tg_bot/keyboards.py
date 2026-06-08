@@ -237,18 +237,15 @@ def direction_keyboard(current: str | None) -> InlineKeyboardMarkup:
 def smart_mode_panel_keyboard(
     auto_trade: bool,
     current_strategy: str | None,
-    hermes_active: bool,
 ) -> InlineKeyboardMarkup:
-    auto_label = "🟢 Auto Trading ON" if auto_trade else "⚪ Auto Trading OFF"
-    hermes_label = "🟡 Hermes: Passive" if hermes_active else "⚪ Hermes: Off"
+    auto_label = "Auto Trading ON" if auto_trade else "Auto Trading OFF"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(auto_label, callback_data="smart:toggle_auto")],
-        [InlineKeyboardButton(hermes_label, callback_data="smart:toggle_hermes")],
-        [InlineKeyboardButton("🎯 Best Strategy", callback_data="smart:best_strategy")],
-        [InlineKeyboardButton("🔄 Force Market Scan", callback_data="smart:scan")],
-        [InlineKeyboardButton("🧪 Simulate Signal", callback_data="smart:simulate")],
-        [InlineKeyboardButton("📊 Performance", callback_data="smart:performance")],
-        [InlineKeyboardButton("◀️ Back", callback_data="menu_main")],
+        [InlineKeyboardButton("Best Strategy", callback_data="smart:best_strategy")],
+        [InlineKeyboardButton("Force Market Scan", callback_data="smart:scan")],
+        [InlineKeyboardButton("Simulate Signal", callback_data="smart:simulate")],
+        [InlineKeyboardButton("Performance", callback_data="smart:performance")],
+        [InlineKeyboardButton("Back", callback_data="menu_main")],
     ])
 
 
