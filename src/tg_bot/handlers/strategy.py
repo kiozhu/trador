@@ -2,7 +2,7 @@
 import json
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, ContextTypes
+from telegram.ext import CallbackQueryHandler, CallbackContext, ContextTypes
 
 from ..keyboards import (
     main_menu_keyboard,

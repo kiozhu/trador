@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
+from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from ..keyboards import main_menu_keyboard
 from . import pnl_chart as chart_mod
@@ -126,10 +126,10 @@ async def _back(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
 def setup_pnl_handlers(app) -> None:
     """Register all PnL handlers."""
-    app.add_callback_query_handler(cmd_pnl, pattern="^pnl$")
-    app.add_callback_query_handler(lambda u, c: _show_chart(u, "24h"), pattern="^pnl_24h$")
-    app.add_callback_query_handler(lambda u, c: _show_chart(u, "7d"),  pattern="^pnl_7d$")
-    app.add_callback_query_handler(lambda u, c: _show_chart(u, "30d"), pattern="^pnl_30d$")
-    app.add_callback_query_handler(lambda u, c: _show_chart(u, "all"),  pattern="^pnl_all$")
-    app.add_callback_query_handler(_show_summary, pattern="^pnl_summary$")
-    app.add_callback_query_handler(_back, pattern="^pnl_back$")
+    app.add_handler(CallbackQueryHandler(cmd_pnl, pattern="^pnl$"))
+    app.add_handler(CallbackQueryHandler(lambda u, c: _show_chart(u, "24h"), pattern="^pnl_24h$"))
+    app.add_handler(CallbackQueryHandler(lambda u, c: _show_chart(u, "7d"),  pattern="^pnl_7d$"))
+    app.add_handler(CallbackQueryHandler(lambda u, c: _show_chart(u, "30d"), pattern="^pnl_30d$"))
+    app.add_handler(CallbackQueryHandler(lambda u, c: _show_chart(u, "all"),  pattern="^pnl_all$"))
+    app.add_handler(CallbackQueryHandler(_show_summary, pattern="^pnl_summary$"))
+    app.add_handler(CallbackQueryHandler(_back, pattern="^pnl_back$"))

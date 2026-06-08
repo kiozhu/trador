@@ -1,6 +1,6 @@
 """Quick Actions — instant execution commands"""
 from telegram import Update, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, ContextTypes
+from telegram.ext import CallbackQueryHandler, CallbackContext, ContextTypes
 
 from ..keyboards import quick_actions_keyboard, main_menu_keyboard, confirm_cancel_keyboard, confirm_close_all_keyboard
 from ...memory import StateManager

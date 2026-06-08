@@ -1,6 +1,6 @@
 """Wallet connect handlers — exchange API key management + connection status"""
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, ContextTypes
+from telegram.ext import CallbackQueryHandler, CallbackContext, ContextTypes
 
 from ..keyboards import wallet_panel_keyboard, wallet_connecting_keyboard, main_menu_keyboard
 from ...memory import StateManager

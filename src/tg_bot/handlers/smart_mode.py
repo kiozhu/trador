@@ -1,6 +1,6 @@
 """Smart Mode — Hermes-driven auto trading + manual quick scan"""
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, ContextTypes
+from telegram.ext import CallbackQueryHandler, CallbackContext, ContextTypes
 
 from ..keyboards import smart_mode_panel_keyboard, main_menu_keyboard
 from ...memory import PerformanceTracker, StateManager

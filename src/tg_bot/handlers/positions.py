@@ -1,6 +1,6 @@
 """Position handlers — view open positions"""
 from telegram import Update
-from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters, ContextTypes
 
 from ..keyboards import main_menu_keyboard
 from ...utils.logger import log

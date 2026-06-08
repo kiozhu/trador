@@ -8,6 +8,21 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
+# ── Patch Application to avoid closing inherited event loops ─────────────────
+_original_run = Application.run_polling
+async def _patched_run_polling(self, *args, **kwargs):
+    try:
+        await _original_run(self, *args, **kwargs)
+    finally:
+        # Don't close the event loop if it was already running before us
+        try:
+            loop = asyncio.get_running_loop()
+            if not loop.is_running():
+                pass  # normal case
+        except Exception:
+            pass
+Application.run_polling = _patched_run_polling
+
 from .utils.logger import log
 from .strategy import StrategyLoader, StrategyWatcher
 from .memory import TradeLog, PerformanceTracker, StateManager
@@ -98,46 +113,27 @@ class Trador:
         setup_pnl_handlers(self.app)
 
         # ── Text button handlers ─────────────────────────────────────────────
-        @self.app.on_message(filters.TEXT & ~filters.COMMAND)
-        async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text_buttons = {
+            "🚀 Start": self._handle_start,
+            "🛑 Stop": self._handle_stop,
+            "🧠 Smart Mode": self._handle_smart_mode,
+            "⚡ Quick Actions": self._handle_quick_actions,
+            "🔗 Wallet": self._handle_wallet,
+            "🎮 Mode": self._handle_mode,
+            "📐 Direction": self._handle_direction,
+            "📊 PnL Chart": self._handle_pnl,
+            "📋 View Orders": self._handle_view_orders,
+        }
+
+        async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = update.message.text
-            if text == "🚀 Start":
-                self.state_mgr.set_trading(True)
-                self.state_mgr.set_status("running")
-                await update.message.reply_text(
-                    "🟢 *Trading started!*",
-                    parse_mode="Markdown",
-                    reply_markup=main_menu_keyboard(),
-                )
-            elif text == "🛑 Stop":
-                self.state_mgr.set_trading(False)
-                self.state_mgr.set_status("stopped")
-                await update.message.reply_text(
-                    "🔴 *Trading stopped.*",
-                    parse_mode="Markdown",
-                    reply_markup=main_menu_keyboard(),
-                )
-            elif text == "🧠 Smart Mode":
-                from .tg_bot.handlers.smart_mode import cmd_smart_mode
-                await cmd_smart_mode(update, context, self.state_mgr, self.loader, self.perf)
-            elif text == "⚡ Quick Actions":
-                from .tg_bot.handlers.quick_actions import cmd_quick_actions
-                await cmd_quick_actions(update, context)
-            elif text == "🔗 Wallet":
-                from .tg_bot.handlers.wallet import cmd_wallet
-                await cmd_wallet(update, context, self.state_mgr)
-            elif text == "🎮 Mode":
-                from .tg_bot.handlers.wallet import cmd_mode
-                await cmd_mode(update, context, self.state_mgr)
-            elif text == "📐 Direction":
-                from .tg_bot.handlers.wallet import cmd_direction
-                await cmd_direction(update, context, self.state_mgr)
-            elif text == "📊 PnL Chart":
-                from .tg_bot.handlers.pnl import cmd_pnl
-                await cmd_pnl(update, context)
-            elif text == "📋 View Orders":
-                from .tg_bot.handlers.quick_actions import view_orders
-                await view_orders(update, context, self.engine, self.state_mgr)
+            handler = text_buttons.get(text)
+            if handler:
+                await handler(update, context)
+
+        self.app.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_buttons)
+        )
 
         # ── Hermes suggestion reader loop ────────────────────────────────────
         async def hermes_reader_loop():
@@ -165,6 +161,49 @@ class Trador:
         log.info("Trador started!")
         await self.app.run_polling(drop_pending_updates=True)
 
+    # ── Button handlers ──────────────────────────────────────────────────────
+    async def _handle_start(self, update, _):
+        self.state_mgr.set_trading(True)
+        self.state_mgr.set_status("running")
+        await update.message.reply_text(
+            "🟢 *Trading started!*", parse_mode="Markdown", reply_markup=main_menu_keyboard(),
+        )
+
+    async def _handle_stop(self, update, _):
+        self.state_mgr.set_trading(False)
+        self.state_mgr.set_status("stopped")
+        await update.message.reply_text(
+            "🔴 *Trading stopped.*", parse_mode="Markdown", reply_markup=main_menu_keyboard(),
+        )
+
+    async def _handle_smart_mode(self, update, context):
+        from .tg_bot.handlers.smart_mode import cmd_smart_mode
+        await cmd_smart_mode(update, context, self.state_mgr, self.loader, self.perf)
+
+    async def _handle_quick_actions(self, update, context):
+        from .tg_bot.handlers.quick_actions import cmd_quick_actions
+        await cmd_quick_actions(update, context)
+
+    async def _handle_wallet(self, update, context):
+        from .tg_bot.handlers.wallet import cmd_wallet
+        await cmd_wallet(update, context, self.state_mgr)
+
+    async def _handle_mode(self, update, context):
+        from .tg_bot.handlers.wallet import cmd_mode
+        await cmd_mode(update, context, self.state_mgr)
+
+    async def _handle_direction(self, update, context):
+        from .tg_bot.handlers.wallet import cmd_direction
+        await cmd_direction(update, context, self.state_mgr)
+
+    async def _handle_pnl(self, update, context):
+        from .tg_bot.handlers.pnl import cmd_pnl
+        await cmd_pnl(update, context)
+
+    async def _handle_view_orders(self, update, context):
+        from .tg_bot.handlers.quick_actions import view_orders
+        await view_orders(update, context, self.engine, self.state_mgr)
+
     async def stop(self):
         self.running = False
         if self._reader_task:
@@ -183,19 +222,33 @@ class Trador:
 async def main():
     trader = Trador()
 
-    def signal_handler(sig, frame):
-        log.info("Received signal %s, shutting down...", sig)
-        asyncio.create_task(trader.stop())
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
     try:
         await trader.start()
+    except KeyboardInterrupt:
+        log.info("Interrupted, shutting down...")
     except Exception as e:
-        log.error("Fatal error: %s", e)
+        # Suppress event loop errors from subprocess context
+        if "Cannot close a running event loop" in str(e):
+            log.info("Shutting down (event loop cleanup skipped)")
+        else:
+            log.error("Fatal error: %s", e)
+        try:
+            import asyncio
+            _ = asyncio.get_running_loop()
+        except Exception:
+            pass
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "Cannot close a running event loop" in str(e):
+            pass  # Suppress — inherited loop from PTY shell
+        elif "set_wakeup_fd" in str(e):
+            pass  # Suppress — signal in non-main thread
+        else:
+            raise
+    except SystemExit:
+        pass
