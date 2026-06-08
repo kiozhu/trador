@@ -1,0 +1,43 @@
+{
+  "id": "scalp_rapid",
+  "name": "Scalp Rapid",
+  "version": 1,
+  "description": "Scalping cepat — EMA9/21 + RSI + volume spike. Quick entries, tight SL.",
+
+  "indicators": {
+    "ema_fast": 9,
+    "ema_mid": 21,
+    "rsi_period": 7,
+    "rsi_buy_threshold": 60,
+    "rsi_sell_threshold": 40,
+    "volume_ma_period": 20,
+    "volume_spike_multiplier": 1.5
+  },
+
+  "entry": {
+    "signal": "ema_reversal",
+    "confirm": ["rsi_cross", "volume_spike"],
+    "min_mcap_usd": 100000
+  },
+
+  "position": {
+    "size_type": "fixed_percent",
+    "size_value": 3,
+    "leverage": 5,
+    "max_open": 3
+  },
+
+  "risk": {
+    "sl_percent": -1,
+    "tp_percent": 2,
+    "trailing": "breakeven",
+    "max_hold_minutes": 5,
+    "breakeven_after_pct": 0.5
+  },
+
+  "filters": {
+    "min_volume_24h_usd": 200000,
+    "maxSpread_bps": 5,
+    "no_major_news_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16]
+  }
+}
