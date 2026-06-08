@@ -1,0 +1,21 @@
+# Core
+python-telegram-bot==22.6
+ccxt==4.4.8
+websocket-client==1.8.0
+watchdog==6.0.0
+
+# HTTP client for LLM
+requests==2.32.3
+aiohttp==3.11.14
+
+# Utils
+python-dotenv==1.0.1
+pytz==2025.2
+
+# Logging
+coloredlogs==15.14
+
+# Technical indicators (TA-lib alternative in pure Python)
+ta==0.11.0
+pandas==2.2.3
+numpy==1.26.4

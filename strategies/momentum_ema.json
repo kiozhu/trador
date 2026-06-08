@@ -1,0 +1,45 @@
+{
+  "id": "momentum_ema",
+  "name": "Momentum EMA Crossover",
+  "version": 1,
+  "description": "EMA20/50 crossover with ADX filter — default strategy",
+
+  "indicators": {
+    "ema_fast": 20,
+    "ema_slow": 50,
+    "adx_period": 14,
+    "adx_threshold": 25,
+    "rsi_period": 14,
+    "rsi_overbought": 70,
+    "rsi_oversold": 30
+  },
+
+  "entry": {
+    "signal": "ema_crossover",
+    "confirm": ["adx_above_threshold", "rsi_not_overbought"],
+    "min_mcap_usd": 10000,
+    "max_mcap_usd": 500000
+  },
+
+  "position": {
+    "size_type": "fixed_percent",
+    "size_value": 10,
+    "leverage": 3,
+    "max_open": 2
+  },
+
+  "risk": {
+    "sl_percent": -3,
+    "tp_percent": 6,
+    "trailing": true,
+    "trailing_trigger_pct": 2,
+    "trailing_distance_pct": 1.5,
+    "max_hold_minutes": 30,
+    "breakeven_after_pct": 1.5
+  },
+
+  "filters": {
+    "min_volume_24h_usd": 50000,
+    "no_news_hours": [0, 1, 2, 3, 4, 5]
+  }
+}
