@@ -51,13 +51,22 @@ trador/
 │   │       ├── trades.py       # Trade history
 │   │       ├── smart_mode.py   # Auto trading + Hermes smart panel
 │   │       ├── quick_actions.py # Instant execution commands
-│   │       └── wallet.py      # Wallet connect + mode + direction
+│   │       ├── wallet.py       # Wallet connect + mode + direction
+│   │       ├── pnl.py          # PnL chart menu
+│   │       └── pnl_chart.py    # Chart generator (matplotlib)
+│   ├── scanners/              # Market data scanners (no API key needed)
+│   │   ├── __init__.py
+│   │   ├── liquidation_scanner.py    # Binance WS forceOrder stream
+│   │   ├── orderbook_scanner.py     # Binance WS depth20@100ms
+│   │   ├── whale_scanner.py         # DexScreener + Binance WS trade
+│   │   ├── funding_scanner.py       # Binance REST + WS premiumIndex
+│   │   ├── volume_profile_scanner.py # Binance REST klines (POC/VAH/VAL)
+│   │   └── smc_scanner.py           # SMC: OB/FVG/sweeps/BOS (Binance REST)
 │   ├── trading/
 │   │   ├── __init__.py
-│   │   ├── engine.py            # ccxt Binance Futures wrapper
+│   │   ├── engine.py            # ccxt Binance Futures wrapper + leverage math
 │   │   ├── signals.py           # Signal generation (EMA, RSI, MACD, ADX)
-│   │   ├── position_manager.py  # Position tracking, SL/TP, trailing
-│   │   └── risk.py # Risk rules, position sizing
+│   │   └── position_manager.py  # Position tracking, SL/TP, trailing
 │   ├── strategy/
 │   │   ├── __init__.py
 │   │   ├── loader.py            # Load/reload strategy JSON files
@@ -80,10 +89,18 @@ trador/
 │       ├── __init__.py
 │       ├── logger.py            # Logging setup
 │       └── helpers.py           # JSON atomic write, formatting
-├── strategies/
-│   ├── momentum_ema.json        # Default strategy
-│   ├── grid_v1.json
-│   └── scalping_v1.json
+├── strategies/               # 11 strategy JSON files
+│   ├── momentum_ema.json        # EMA20/50 crossover + ADX
+│   ├── scalp_rapid.json         # Scalping EMA9/21 + RSI + volume
+│   ├── liquidation_hunter.json  # Liquidation cascade (WS)
+│   ├── grid_hunter.json         # Bollinger Bands grid
+│   ├── breakout_pro.json        # Breakout + volume confirmation
+│   ├── swing_stealth.json       # Swing trade EMA50/200
+│   ├── orderblock_hunter.json   # SMC: Order Block reclaim
+│   ├── fvg_catcher.json         # SMC: Fair Value Gap
+│   ├── liquidity_sweep.json     # SMC: Liquidity sweep reversal
+│   ├── funding_arbitrage.json   # Funding rate edge
+│   └── whale_rider.json         # Whale activity (>$50K trades)
 ├── shared/                       # File communication with Hermes
 │   ├── trador_reports/          # Written by Trador, read by Hermes
 │   │   ├── status.json
