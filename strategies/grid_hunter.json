@@ -24,14 +24,14 @@
   "position": {
     "size_type": "equal_grid",
     "size_value": 5,
-    "leverage": 2,
-    "max_open": 1
+    "leverage": 3,
+    "max_open": 2
   },
   "risk": {
-    "sl_percent": -5,
-    "tp_percent": 4,
+    "sl_percent": -1.5,
+    "tp_percent": 2.0,
     "trailing": false,
-    "max_hold_minutes": 120,
+    "max_hold_minutes": 15,
     "grid_rebalance": true,
     "grid_rebalance_threshold_pct": 3
   },
@@ -42,11 +42,11 @@
   },
   "direction": "both",
   "long_settings": {
-    "sl_percent": -5,
-    "tp_percent": 4
+    "sl_percent": -1.5,
+    "tp_percent": 2.0
   },
   "short_settings": {
-    "sl_percent": -5,
-    "tp_percent": 4
+    "sl_percent": -1.5,
+    "tp_percent": 2.0
   }
 }

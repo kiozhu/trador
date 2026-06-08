@@ -1,0 +1,56 @@
+{
+  "id": "liquidation_hunter",
+  "name": "Liquidation Hunter",
+  "version": 1,
+  "description": "Riding cascade after liquidation wave — tight TP 1.5-3%, high frequency, small but consistent wins.",
+  "indicators": {
+    "ema_fast": 9,
+    "ema_slow": 21,
+    "rsi_period": 7,
+    "volume_ma_period": 20,
+    "atr_period": 14
+  },
+  "entry": {
+    "signal": "liquidation_cascade",
+    "confirm": [
+      "ema_alignment_after_cascade",
+      "volume_surge_after_liquidation",
+      "rsi_normal_zone"
+    ],
+    "liquidation_cluster_threshold_usdt": 50000,
+    "min_mcap_usd": 50000,
+    "cascade_entry_delay_ms": 500,
+    "max_entry_distance_pct": 0.3
+  },
+  "position": {
+    "size_type": "fixed_percent",
+    "size_value": 3,
+    "leverage": 10,
+    "max_open": 2
+  },
+  "risk": {
+    "sl_percent": -1,
+    "tp_percent": 2,
+    "trailing": "breakeven",
+    "trailing_trigger_pct": 0.8,
+    "max_hold_minutes": 3,
+    "breakeven_after_pct": 0.5,
+    "max_daily_trades": 50
+  },
+  "filters": {
+    "min_volume_24h_usd": 200000,
+    "max_atr_spread_pct": 0.5,
+    "no_major_news_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16]
+  },
+  "direction": "both",
+  "long_settings": {
+    "sl_percent": -1,
+    "tp_percent": 2,
+    "entry_trigger": "short_liquidation_cascade"
+  },
+  "short_settings": {
+    "sl_percent": -1,
+    "tp_percent": 2,
+    "entry_trigger": "long_liquidation_cascade"
+  }
+}

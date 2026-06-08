@@ -21,18 +21,18 @@
   },
   "position": {
     "size_type": "fixed_percent",
-    "size_value": 8,
+    "size_value": 6,
     "leverage": 5,
     "max_open": 2
   },
   "risk": {
-    "sl_percent": -2.5,
-    "tp_percent": 10,
+    "sl_percent": -2.0,
+    "tp_percent": 4.0,
     "trailing": true,
-    "trailing_trigger_pct": 4,
-    "trailing_distance_pct": 2.5,
-    "max_hold_minutes": 60,
-    "breakeven_after_pct": 3
+    "trailing_trigger_pct": 2.0,
+    "trailing_distance_pct": 1.5,
+    "max_hold_minutes": 20,
+    "breakeven_after_pct": 1.5
   },
   "filters": {
     "min_volume_24h_usd": 150000,
@@ -41,11 +41,11 @@
   },
   "direction": "both",
   "long_settings": {
-    "sl_percent": -2.5,
-    "tp_percent": 10
+    "sl_percent": -2.0,
+    "tp_percent": 4.0
   },
   "short_settings": {
-    "sl_percent": -2.5,
-    "tp_percent": 10
+    "sl_percent": -2.0,
+    "tp_percent": 4.0
   }
 }
