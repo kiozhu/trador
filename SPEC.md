@@ -39,18 +39,19 @@ trador/
 ├── requirements.txt
 ├── src/
 │   ├── __init__.py
-│   ├── main.py # Entry point — starts everything
-│   ├── telegram/
+│   ├── main.py                  # Entry point
+│   ├── tg_bot/
 │   │   ├── __init__.py
-│   │   ├── bot.py               # python-telegram-bot Application
-│   │   ├── handlers/
-│   │   │   ├── __init__.py
-│   │   │   ├── menu.py          # /start, reply keyboard menu
-│   │   │   ├── positions.py     # View positions, PnL
-│   │   │   ├── strategy.py      # Strategy config via inline keyboard
-│   │   │   └── trades.py        # Trade history
-│   │   ├── keyboards.py         # Reply keyboard + inline keyboard builders
-│   │   └── states.py            # ConversationHandler states
+│   │   ├── keyboards.py         # Reply + inline keyboard builders
+│   │   └── handlers/
+│   │       ├── __init__.py
+│   │       ├── menu.py         # /start, status, balance, help
+│   │       ├── positions.py    # View positions, PnL
+│   │       ├── strategy.py     # Strategy CRUD + param adjustment
+│   │       ├── trades.py       # Trade history
+│   │       ├── smart_mode.py   # Auto trading + Hermes smart panel
+│   │       ├── quick_actions.py # Instant execution commands
+│   │       └── wallet.py      # Wallet connect + mode + direction
 │   ├── trading/
 │   │   ├── __init__.py
 │   │   ├── engine.py            # ccxt Binance Futures wrapper
@@ -112,6 +113,8 @@ Each strategy is a JSON file in `strategies/`. Trador watches this directory and
   "version": 1,
   "description": "EMA20/50 crossover with ADX filter",
 
+  "direction": "both",  // "long", "short", or "both" — trade direction filter
+
   "indicators": {
     "ema_fast": 20,
     "ema_slow": 50,
@@ -159,18 +162,38 @@ Each strategy is a JSON file in `strategies/`. Trador watches this directory and
 
 ###4.1 Reply Keyboard (Persistent Menu)
 
-Shown when user starts bot with `/start`:
+```
+┌──────────────────────────────────────────┐
+│  [📊 Status]      [📈 Positions]         │
+│  [⚙️ Strategi]    [📋 History]           │
+│  [🚀 Start]       [🛑 Stop]              │
+│  [💰 Balance]     [🧠 Smart Mode]        │
+│  [⚡ Quick Actions] [🔗 Wallet]           │
+│  [🎮 Mode]        [❓ Help]               │
+└──────────────────────────────────────────┘
+```
+
+### 4.2 Mode + Direction
 
 ```
-┌──────────────────────────────────────────────┐
-│  [📊 Status]      [📈 Positions]           │
-│  [⚙️ Strategi]    [📋 History] │
-│  [🚀 Start]       [🛑 Stop]                  │
-│  [💰 Balance]     [❓ Help]                  │
-└──────────────────────────────────────────────┘
+🎮 Mode: 🔴 LIVE | Direction: BOTH
+Wallet: ✅ Connected (Binance)
+
+[🔴 LIVE]  [🟡 DRY RUN]  — switch trading mode
+[📈 LONG]  [📉 SHORT]  [🔄 BOTH] — switch direction
 ```
 
-### 4.2 Inline Keyboard — Strategy Selection
+### 4.3 Wallet Connect Panel
+
+```
+🔗 CONNECT EXCHANGE
+
+[🟣 Binance Futures]  [🔵 Bybit]  [🟠 OKX]
+
+API keys from .env — no secrets stored in memory
+```
+
+### 4.4 Inline Keyboard — Strategy Selection
 
 Sent as response to "⚙️ Strategi" button:
 
@@ -185,7 +208,7 @@ Ubah Parameter:
 [⏱️ Max Hold]  [📦 Position Size]
 ```
 
-### 4.3 Inline Keyboard — Parameter Adjustment
+### 4.5 Inline Keyboard — Parameter Adjustment
 
 ```
 Risk Per Trade:
@@ -198,10 +221,71 @@ Trailing Stop:
 [Off] [Breakeven] [Secure] [Trail]
 ```
 
-### 4.4 Status Display (on "📊 Status")
+### 4.6 Status Display (on "📊 Status")
 
 ```
-🔥 TRADOR — Active
+🔥 TRADOR STATUS
+
+Mode: 🔴 LIVE | Direction: BOTH
+Wallet: ✅ | Strategy: `momentum_ema`
+Trading: 🟢 Active | Open Positions: 2
+
+24h Performance
+Trades: 47 | Win Rate: 61.7%
+PnL: $1240.50
+```
+
+### 4.7 Smart Mode Panel
+
+```
+🧠 SMART MODE
+
+Auto Trading: 🟢 ON | Hermes: Passive
+Strategy: `breakout_pro`
+
+[🟢 Auto Trading ON] [🟡 Hermes: Passive]
+[🎯 Best Strategy] [🔄 Force Scan]
+[🧪 Simulate Signal] [📊 Performance]
+```
+
+### 4.8 Quick Actions
+
+```
+⚡ QUICK ACTIONS
+
+[📋 View Orders] [❌ Cancel All]
+[💸 Close All]   [📈 Avg Entry]
+[🔍 Scan Market] [📐 Direction]
+```
+
+---
+
+## 5. Bot Modes
+
+### Live vs Dry Run
+
+| | 🔴 LIVE | 🟡 DRY RUN |
+|-|---------|------------|
+| Real money | ✅ Yes | ❌ No |
+| Exchange trades | ✅ Executed | ❌ Simulated |
+| Wallet required | ✅ Connected | ❌ Not needed |
+| Balance affected | ✅ Yes | ❌ No |
+
+### Trade Direction
+
+| Mode | Description |
+|------|-------------|
+| `long` | Only go LONG (profit when price rises) |
+| `short` | Only go SHORT (profit when price drops) |
+| `both` | Both directions (recommended for futures) |
+
+**Why both?** Futures allows shorting — profit in any market direction. The key is *analysis quality + strategy*, not market direction.
+
+### Supported Exchanges
+
+- 🟣 **Binance Futures** — `BINANCE_API_KEY` + `BINANCE_API_SECRET`
+- 🔵 **Bybit Unified** — `BYBIT_API_KEY` + `BYBIT_API_SECRET`
+- 🟠 **OKX** — `OKX_API_KEY` + `OKX_API_SECRET`
 
 Strategy: Momentum EMA v1
 Position: LONG ETHUSDT @ 3420.50
@@ -220,7 +304,7 @@ Exit: Take Profit
 
 ---
 
-## 5. LLM Role — Execution Scorer ONLY
+## 6. LLM Role — Execution Scorer ONLY
 
 LLM is used ONLY to score execution quality. It CANNOT change strategy.
 
@@ -263,7 +347,7 @@ Lesson: {jika ada lesson untuk di记录, kalau tidak ada kosongkan}
 
 ---
 
-## 6. Hermes Communication
+## 7. Hermes Communication
 
 ###6.1 Trador → Hermes (Reports)
 
@@ -424,7 +508,32 @@ Hermes NEVER receives:
 
 ---
 
-## 7. File Watcher — Hot Reload Strategy
+## 8. State Manager
+
+```python
+state = {
+    "bot_status": "running",
+    "strategy_active": "momentum_ema",
+    "trading_enabled": True,
+    "mode": "live",           # "live" or "dry_run"
+    "exchange": "binance",   # "binance", "bybit", "okx"
+    "wallet_connected": True,
+    "wallet_address": "binance_user_ax2...",
+    "direction": "both",     # "long", "short", "both"
+    "open_positions": 2,
+    "last_trade_at": "2026-06-10T...",
+    "cooling_until": None,
+}
+```
+
+Methods:
+- `set_mode("live"|"dry_run")` — switch trading mode
+- `set_wallet(exchange, address, connected)` — update wallet state
+- `set("direction", "both")` — set trade direction
+
+---
+
+## 9. File Watcher — Hot Reload Strategy
 
 Trador uses `watchdog` to monitor `strategies/` directory.
 
@@ -445,7 +554,7 @@ strategies/*.json changed
 
 ---
 
-## 8. Memory System
+## 10. Memory System
 
 Trador maintains its own memory in `memory/` directory.
 
@@ -499,7 +608,7 @@ Trador maintains its own memory in `memory/` directory.
 
 ---
 
-## 9. Tech Stack
+## 11. Tech Stack
 
 | Component | Library |
 |-----------|---------|
@@ -513,7 +622,7 @@ Trador maintains its own memory in `memory/` directory.
 
 ---
 
-## 10. Implementation Phases
+## 12. Implementation Phases
 
 ### Phase 1: Core Infrastructure
 - [ ] Project setup (requirements.txt, .env.example, folder structure)
@@ -553,7 +662,7 @@ Trador maintains its own memory in `memory/` directory.
 
 ---
 
-## 11. Hard Rules
+## 13. Hard Rules
 
 1. **LLM never changes strategy** — only scores execution
 2. **Strategy file is the source of truth** — not memory, not runtime state
