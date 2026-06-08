@@ -40,6 +40,10 @@ Trador
 
 **Hermes** = supervisor that can modify Trador's strategy files. **Trador** = executor that reads strategy and trades.
 
+**Memory & Role Separation:**
+- Hermes: fokus analisis hasil trade, belajar dari error, ubah strategy JSON. GA BISA akses memory Trador atau LLM scorer Trador.
+- Trador: fokus eksekusi, enforce hard limits, LLM scorer sendiri. GA BISA ubah strategy sendiri atau interpretasi bebas dari Hermes suggestion.
+
 ---
 
 ## Folder Structure

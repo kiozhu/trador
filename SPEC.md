@@ -377,6 +377,53 @@ Read from `shared/hermes_suggestions/pending/`:
 
 ---
 
+## 6.3 Memory & Role Separation
+
+```
+HERMES (memori sendiri, fokus analisis)
+──────────────────────────────────────────────────
+• Analisa hasil trade → belajar pattern error
+• Evaluasi strategi → worth it atau perlu ganti
+• Ubah strategy JSON files di Trador's strategies/
+• GA BISA skoring / ubah eksekusi Trador
+• GA BACA .env atau memory internal Trador
+• GA PUNYA akses ke Trador's LLM scorer
+• Fokus: learning + strategy improvement
+• Memory: error_patterns, strategy_effectiveness
+
+TRADOR (memori sendiri, fokus eksekusi)
+──────────────────────────────────────────────────
+• Execute trading berdasarkan strategy file
+• Enforce hard limits sendiri
+• LLM scorer sendiri → evaluasi execution quality
+• GA BISA ubah strategy sendiri
+• GA BISA interpretasi suggestion Hermes bebas
+• GA REMEMBER apa yang Hermes suggestion
+  → Hermes rubah strategy → Trador follow
+  → ga ada "learn from Hermes analysis"
+• Fokus: eksekusi taat + report hasil
+• Memory: trade_history, performance, state
+
+COMMUNICATION — FILE-BASED ONLY
+──────────────────────────────────────────────────
+Trador → Hermes:  shared/trador_reports/
+  • status.json     — bot state, positions, perf
+  • trades.json     — individual trade results
+  • metrics.json    — 24h/7d/30d metrics
+
+Hermes → Trador:  shared/hermes_suggestions/pending/
+  • *.json          — strategy file modifications only
+  Trador READS → APPLIES → MOVES to processed/
+  Trador does NOT interpret, discuss, or respond
+
+Hermes NEVER receives:
+  ✗ Trador's LLM scorer output
+  ✗ Trador's internal execution decisions
+  ✗ Trador's .env or API keys
+```
+
+---
+
 ## 7. File Watcher — Hot Reload Strategy
 
 Trador uses `watchdog` to monitor `strategies/` directory.
