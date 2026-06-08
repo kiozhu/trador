@@ -1,0 +1,55 @@
+{
+  "id": "whale_rider",
+  "name": "Whale Rider",
+  "version": 1,
+  "description": "Ride institutional whale activity — enter after large wall collapse or whale trade cluster.",
+  "indicators": {
+    "whale_threshold_usdt": 50000,
+    "ema_fast": 9,
+    "ema_mid": 21,
+    "rsi_period": 7,
+    "volume_ma_period": 20
+  },
+  "entry": {
+    "signal": "whale_activity",
+    "confirm": [
+      "whale_cluster_confirmed",
+      "ema_alignment",
+      "volume_follow"
+    ],
+    "whale_cluster_min_count": 2,
+    "whale_min_notional_usdt": 50000,
+    "entry_delay_ms": 300,
+    "min_mcap_usd": 50000
+  },
+  "position": {
+    "size_type": "fixed_percent",
+    "size_value": 3,
+    "leverage": 10,
+    "max_open": 2
+  },
+  "risk": {
+    "sl_percent": 1.0,
+    "tp_percent": 2.5,
+    "trailing": "breakeven",
+    "trailing_trigger_pct": 0.8,
+    "max_hold_minutes": 5,
+    "breakeven_after_pct": 0.6
+  },
+  "filters": {
+    "min_volume_24h_usd": 200000,
+    "whale_only_confirmed": true,
+    "no_major_news_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16]
+  },
+  "direction": "both",
+  "long_settings": {
+    "sl_percent": 1.0,
+    "tp_percent": 2.5,
+    "entry_trigger": "whale_buy_cluster"
+  },
+  "short_settings": {
+    "sl_percent": 1.0,
+    "tp_percent": 2.5,
+    "entry_trigger": "whale_sell_cluster"
+  }
+}

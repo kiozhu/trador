@@ -66,15 +66,56 @@ class TradingEngine:
             log.error("Failed to fetch positions: %s", e)
             return []
 
-    async def place_order(self, symbol: str, side: str, order_type: str,
-                         amount: float, price: float | None = None,
-                         sl: float | None = None, tp: float | None = None) -> dict:
+    async def place_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        amount: float,
+        price: float | None = None,
+        sl_pct: float | None = None,
+        tp_pct: float | None = None,
+        leverage: int = 3,
+    ) -> dict:
+        """Place order with proper leverage and SL/TP calculation.
+
+        SL/TP percentages are in PRICE terms (not margin terms).
+        With leverage L: a 1% price move = L% margin change.
+        So to limit margin loss to X%, price must move X%/L.
+        """
         try:
-            params = {"leverage": 3}  # will be overridden per strategy
+            # Set leverage
+            await asyncio.to_thread(self.exchange.set_leverage, leverage, symbol)
+
+            # Build params with reduce-only SL/TP
+            params: dict[str, Any] = {
+                "leverage": leverage,
+                "reduceOnly": False,
+            }
+
+            # Calculate SL/TP prices from percentage (price terms)
+            if sl_pct is not None:
+                sl_pct_price = abs(sl_pct) / leverage  # price movement allowed
+                if side.upper() == "BUY" or side == "LONG":
+                    params["stopLossPrice"] = round(price * (1 - sl_pct_price) if price else 0, 8)
+                else:
+                    params["stopLossPrice"] = round(price * (1 + sl_pct_price) if price else 0, 8)
+
+            if tp_pct is not None:
+                tp_pct_price = abs(tp_pct) / leverage  # price movement for TP
+                if side.upper() == "BUY" or side == "LONG":
+                    params["takeProfitPrice"] = round(price * (1 + tp_pct_price) if price else 0, 8)
+                else:
+                    params["takeProfitPrice"] = round(price * (1 - tp_pct_price) if price else 0, 8)
+
             order = await asyncio.to_thread(
                 self.exchange.create_order, symbol, order_type, side, amount, price, params
             )
-            log.info("Order placed: %s %s %s %s", side, order_type, symbol, amount)
+            log.info(
+                "Order placed: %s %s %s %s @ %s, lev=%d, SL=%.4f, TP=%.4f",
+                side, order_type, symbol, amount, price, leverage,
+                params.get("stopLossPrice"), params.get("takeProfitPrice"),
+            )
             return order
         except Exception as e:
             log.error("Order failed: %s", e)

@@ -1,0 +1,53 @@
+{
+  "id": "liquidity_sweep",
+  "name": "Liquidity Sweep",
+  "version": 1,
+  "description": "SMC — ride the reversal after liquidity sweeps (stop hunts). Tight and fast.",
+  "indicators": {
+    "sweep_threshold_pct": 0.3,
+    "ema_fast": 9,
+    "ema_slow": 21,
+    "rsi_period": 7,
+    "atr_period": 14
+  },
+  "entry": {
+    "signal": "liquidity_sweep_reversal",
+    "confirm": [
+      "sweep_reversal_candle",
+      "volume_surge",
+      "rsi_extreme"
+    ],
+    "sweep_max_distance_pct": 0.5,
+    "min_mcap_usd": 50000
+  },
+  "position": {
+    "size_type": "fixed_percent",
+    "size_value": 3,
+    "leverage": 10,
+    "max_open": 2
+  },
+  "risk": {
+    "sl_percent": 1.0,
+    "tp_percent": 2.5,
+    "trailing": "breakeven",
+    "trailing_trigger_pct": 0.8,
+    "max_hold_minutes": 5,
+    "breakeven_after_pct": 0.6
+  },
+  "filters": {
+    "min_volume_24h_usd": 200000,
+    "smc_mode": true,
+    "no_major_news_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16]
+  },
+  "direction": "both",
+  "long_settings": {
+    "sl_percent": 1.0,
+    "tp_percent": 2.5,
+    "entry_trigger": "short_sweep_reversal"
+  },
+  "short_settings": {
+    "sl_percent": 1.0,
+    "tp_percent": 2.5,
+    "entry_trigger": "long_sweep_reversal"
+  }
+}

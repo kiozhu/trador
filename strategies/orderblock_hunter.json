@@ -1,0 +1,56 @@
+{
+  "id": "orderblock_hunter",
+  "name": "Order Block Hunter",
+  "version": 1,
+  "description": "SMC — trade from institutional order blocks. Price returns to OB zone = high probability entry.",
+  "indicators": {
+    "ob_candle_count": 3,
+    "ob_wick_tolerance": 0.3,
+    "ema_fast": 9,
+    "ema_slow": 21,
+    "rsi_period": 14
+  },
+  "entry": {
+    "signal": "orderblock_reclaim",
+    "confirm": [
+      "ema_alignment",
+      "rsi_normal_zone",
+      "volume_confirmation"
+    ],
+    "ob_age_max_bars": 50,
+    "ob_touch_tolerance_pct": 0.2,
+    "min_mcap_usd": 50000
+  },
+  "position": {
+    "size_type": "fixed_percent",
+    "size_value": 5,
+    "leverage": 5,
+    "max_open": 2
+  },
+  "risk": {
+    "sl_percent": 2.0,
+    "tp_percent": 4.0,
+    "trailing": true,
+    "trailing_trigger_pct": 2.0,
+    "trailing_distance_pct": 1.5,
+    "max_hold_minutes": 30,
+    "breakeven_after_pct": 1.5
+  },
+  "filters": {
+    "min_volume_24h_usd": 100000,
+    "smc_mode": true,
+    "ob_only_fresh": false,
+    "no_major_news_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16]
+  },
+  "direction": "both",
+  "long_settings": {
+    "sl_percent": 2.0,
+    "tp_percent": 4.0,
+    "entry_trigger": "bullish_ob_touch"
+  },
+  "short_settings": {
+    "sl_percent": 2.0,
+    "tp_percent": 4.0,
+    "entry_trigger": "bearish_ob_touch"
+  }
+}

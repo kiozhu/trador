@@ -1,0 +1,52 @@
+{
+  "id": "fvg_catcher",
+  "name": "FVG Catcher",
+  "version": 1,
+  "description": "SMC — trade Fair Value Gap fills. Gaps get filled, ride the mean reversion.",
+  "indicators": {
+    "ema_fast": 9,
+    "ema_mid": 21,
+    "rsi_period": 7
+  },
+  "entry": {
+    "signal": "fvg_entry",
+    "confirm": [
+      "price_returning_to_fvg",
+      "ema_alignment",
+      "rsi_extreme"
+    ],
+    "fvg_gap_size_min_pct": 0.1,
+    "fvg_age_max_bars": 20,
+    "min_mcap_usd": 50000
+  },
+  "position": {
+    "size_type": "fixed_percent",
+    "size_value": 4,
+    "leverage": 8,
+    "max_open": 2
+  },
+  "risk": {
+    "sl_percent": 1.5,
+    "tp_percent": 3.0,
+    "trailing": "breakeven",
+    "trailing_trigger_pct": 1.0,
+    "max_hold_minutes": 10,
+    "breakeven_after_pct": 0.8
+  },
+  "filters": {
+    "min_volume_24h_usd": 150000,
+    "smc_mode": true,
+    "no_major_news_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16]
+  },
+  "direction": "both",
+  "long_settings": {
+    "sl_percent": 1.5,
+    "tp_percent": 3.0,
+    "entry_trigger": "bullish_fvg_fill"
+  },
+  "short_settings": {
+    "sl_percent": 1.5,
+    "tp_percent": 3.0,
+    "entry_trigger": "bearish_fvg_fill"
+  }
+}
