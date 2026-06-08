@@ -20,6 +20,10 @@ class StateManager:
                 "bot_status": "stopped",
                 "strategy_active": None,
                 "trading_enabled": False,
+                "mode": "dry_run",  # "live" or "dry_run"
+                "exchange": None,  # "binance", "bybit", etc.
+                "wallet_connected": False,
+                "wallet_address": None,
                 "open_positions": 0,
                 "last_trade_at": None,
                 "last_report_at": None,
@@ -28,6 +32,10 @@ class StateManager:
 
     def get(self) -> dict[str, Any]:
         return read_json(self.file) or {}
+
+    def set(self, key: str, value: Any) -> None:
+        """Set a single key-value pair."""
+        self.update({key: value})
 
     def update(self, **kwargs) -> None:
         data = self.get()
@@ -44,6 +52,14 @@ class StateManager:
 
     def set_strategy(self, strategy_id: str) -> None:
         self.update(strategy_active=strategy_id)
+
+    def set_mode(self, mode: str) -> None:
+        """Set mode: 'live' or 'dry_run'."""
+        self.update(mode=mode)
+        log.info("Trading mode: %s", mode)
+
+    def set_wallet(self, exchange: str, address: str | None, connected: bool) -> None:
+        self.update(exchange=exchange, wallet_address=address, wallet_connected=connected)
 
     def set_cooling(self, until_ms: int | None) -> None:
         self.update(cooling_until=until_ms)

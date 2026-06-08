@@ -2,8 +2,7 @@
   "id": "grid_hunter",
   "name": "Grid Hunter",
   "version": 1,
-  "description": "Grid trading — buy low sell high di range固定. Cocok market sideways.",
-
+  "description": "Grid trading \u2014 buy low sell high di range\u56fa\u5b9a. Cocok market sideways.",
   "indicators": {
     "bb_period": 20,
     "bb_std": 2,
@@ -12,22 +11,22 @@
     "rsi_period": 14,
     "atr_period": 14
   },
-
   "entry": {
     "signal": "grid_range_bound",
-    "confirm": ["rsi_between_30_70", "bb_not_expanded"],
+    "confirm": [
+      "rsi_between_30_70",
+      "bb_not_expanded"
+    ],
     "range_low": "bb_lower",
     "range_high": "bb_upper",
     "min_mcap_usd": 50000
   },
-
   "position": {
     "size_type": "equal_grid",
     "size_value": 5,
     "leverage": 2,
     "max_open": 1
   },
-
   "risk": {
     "sl_percent": -5,
     "tp_percent": 4,
@@ -36,10 +35,18 @@
     "grid_rebalance": true,
     "grid_rebalance_threshold_pct": 3
   },
-
   "filters": {
     "min_volume_24h_usd": 100000,
     "volatility_max_atr_pct": 4,
     "no_trade_before_hours": 0
+  },
+  "direction": "both",
+  "long_settings": {
+    "sl_percent": -5,
+    "tp_percent": 4
+  },
+  "short_settings": {
+    "sl_percent": -5,
+    "tp_percent": 4
   }
 }

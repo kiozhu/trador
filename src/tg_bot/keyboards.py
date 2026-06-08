@@ -10,7 +10,8 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton("⚙️ Strategi"), KeyboardButton("📋 History")],
             [KeyboardButton("🚀 Start"), KeyboardButton("🛑 Stop")],
             [KeyboardButton("💰 Balance"), KeyboardButton("🧠 Smart Mode")],
-            [KeyboardButton("⚡ Quick Actions"), KeyboardButton("❓ Help")],
+            [KeyboardButton("⚡ Quick Actions"), KeyboardButton("🔗 Wallet")],
+            [KeyboardButton("🎮 Mode"), KeyboardButton("❓ Help")],
         ],
         resize_keyboard=True,
         one_time_keyboard=False,
@@ -36,7 +37,8 @@ def quick_actions_keyboard() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton("📋 View Orders"), KeyboardButton("❌ Cancel All")],
             [KeyboardButton("💸 Close All"), KeyboardButton("📈 Avg Entry")],
-            [KeyboardButton("🔍 Scan Market"), KeyboardButton("◀️ Back")],
+            [KeyboardButton("🔍 Scan Market"), KeyboardButton("📐 Direction")],
+            [KeyboardButton("◀️ Back")],
         ],
         resize_keyboard=True,
         one_time_keyboard=False,
@@ -175,6 +177,58 @@ def signal_source_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("Volume", callback_data="set:signal:volume"),
          InlineKeyboardButton("ADX", callback_data="set:signal:adx")],
         [InlineKeyboardButton("◀️ Kembali", callback_data="strat_params")],
+    ])
+
+
+# ── Inline: Wallet Connect ────────────────────────────────────────────────────
+
+def wallet_panel_keyboard(connected: bool, exchange: str | None, address: str | None) -> InlineKeyboardMarkup:
+    if connected:
+        addr_short = (address[:6] + "..." + address[-4:]) if address else "—"
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"🔗 {(exchange or '').upper()}: {addr_short}", callback_data="wallet_info")],
+            [InlineKeyboardButton("🔄 Reconnect", callback_data="wallet_reconnect")],
+            [InlineKeyboardButton("🔌 Disconnect", callback_data="wallet_disconnect")],
+            [InlineKeyboardButton("◀️ Back", callback_data="menu_main")],
+        ])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🟣 Binance Futures", callback_data="wallet:binance")],
+        [InlineKeyboardButton("🔵 Bybit Unified", callback_data="wallet:bybit")],
+        [InlineKeyboardButton("🟠 OKX", callback_data="wallet:okx")],
+        [InlineKeyboardButton("◀️ Back", callback_data="menu_main")],
+    ])
+
+
+def wallet_connecting_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏳ Connecting...", callback_data="wallet_none")],
+    ])
+
+
+# ── Inline: Mode Selection ───────────────────────────────────────────────────
+
+def mode_selection_keyboard(current: str) -> InlineKeyboardMarkup:
+    live = "🔴 LIVE" if current == "live" else "LIVE"
+    dry = "🟡 DRY RUN" if current == "dry_run" else "DRY RUN"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🔴 {live}", callback_data="mode:live"),
+         InlineKeyboardButton(f"🟡 {dry}", callback_data="mode:dry_run")],
+        [InlineKeyboardButton("📊 View Mode Info", callback_data="mode:info")],
+        [InlineKeyboardButton("◀️ Back", callback_data="menu_main")],
+    ])
+
+
+# ── Inline: Long/Short Direction ─────────────────────────────────────────────
+
+def direction_keyboard(current: str | None) -> InlineKeyboardMarkup:
+    long_mark = " ✅" if current == "long" else ""
+    short_mark = " ✅" if current == "short" else ""
+    both_mark = " ✅" if current == "both" else ""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"📈 LONG{long_mark}", callback_data="dir:long"),
+         InlineKeyboardButton(f"📉 SHORT{short_mark}", callback_data="dir:short")],
+        [InlineKeyboardButton(f"🔄 BOTH{both_mark}", callback_data="dir:both")],
+        [InlineKeyboardButton("◀️ Back", callback_data="menu_main")],
     ])
 
 

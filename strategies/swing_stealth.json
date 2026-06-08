@@ -2,8 +2,7 @@
   "id": "swing_stealth",
   "name": "Swing Stealth",
   "version": 1,
-  "description": "Swing trade — hold lama,狙擊 major moves. Low frequency, high conviction.",
-
+  "description": "Swing trade \u2014 hold lama,\u72d9\u64ca major moves. Low frequency, high conviction.",
   "indicators": {
     "ema_fast": 50,
     "ema_slow": 200,
@@ -13,21 +12,22 @@
     "atr_period": 14,
     "volume_ma_period": 30
   },
-
   "entry": {
     "signal": "ema_trend_follow",
-    "confirm": ["ema_alignment", "adx_strong", "rsi_normal_zone"],
+    "confirm": [
+      "ema_alignment",
+      "adx_strong",
+      "rsi_normal_zone"
+    ],
     "min_mcap_usd": 20000,
     "max_mcap_usd": 1000000
   },
-
   "position": {
     "size_type": "fixed_percent",
     "size_value": 15,
     "leverage": 2,
     "max_open": 1
   },
-
   "risk": {
     "sl_percent": -6,
     "tp_percent": 15,
@@ -37,10 +37,18 @@
     "max_hold_minutes": 480,
     "breakeven_after_pct": 5
   },
-
   "filters": {
     "min_volume_24h_usd": 50000,
     "news_event_filter": true,
     "allow_overnight_hold": true
+  },
+  "direction": "both",
+  "long_settings": {
+    "sl_percent": -6,
+    "tp_percent": 15
+  },
+  "short_settings": {
+    "sl_percent": -6,
+    "tp_percent": 15
   }
 }

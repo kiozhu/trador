@@ -2,8 +2,7 @@
   "id": "breakout_pro",
   "name": "Breakout Pro",
   "version": 1,
-  "description": "Breakout detection — breakout of consolidation range dengan volume确认. High reward.",
-
+  "description": "Breakout detection \u2014 breakout of consolidation range dengan volume\u786e\u8ba4. High reward.",
   "indicators": {
     "breakout_candle_size_pct": 1.5,
     "volume_ma_period": 20,
@@ -12,20 +11,20 @@
     "atr_period": 14,
     "adx_threshold": 20
   },
-
   "entry": {
     "signal": "breakout",
-    "confirm": ["volume_confirmation", "atr_not_extreme"],
+    "confirm": [
+      "volume_confirmation",
+      "atr_not_extreme"
+    ],
     "min_mcap_usd": 50000
   },
-
   "position": {
     "size_type": "fixed_percent",
     "size_value": 8,
     "leverage": 5,
     "max_open": 2
   },
-
   "risk": {
     "sl_percent": -2.5,
     "tp_percent": 10,
@@ -35,10 +34,18 @@
     "max_hold_minutes": 60,
     "breakeven_after_pct": 3
   },
-
   "filters": {
     "min_volume_24h_usd": 150000,
     "high_atr_filter": true,
     "news_cooldown_hours": 2
+  },
+  "direction": "both",
+  "long_settings": {
+    "sl_percent": -2.5,
+    "tp_percent": 10
+  },
+  "short_settings": {
+    "sl_percent": -2.5,
+    "tp_percent": 10
   }
 }

@@ -22,6 +22,10 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE,
     pos_count = state.get("open_positions", 0)
     strategy = state.get("strategy_active", "none")
     trading = "🟢 Active" if state.get("trading_enabled") else "🔴 Stopped"
+    mode = state.get("mode", "dry_run")
+    mode_emoji = "🔴 LIVE" if mode == "live" else "🟡 DRY"
+    direction = state.get("direction", "both")
+    wallet = "✅" if state.get("wallet_connected") else "❌"
 
     cooling = state.get("cooling_until")
     cooling_msg = ""
@@ -32,11 +36,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE,
             cooling_msg = f"\n⏳ Cooling: {remaining}s"
 
     text = (
-        f"🔥 *TRADOR STATUS*\n\n"
-        f"Trading: {trading}\n"
-        f"Strategy: `{strategy}`\n"
-        f"Open Positions: {pos_count}\n"
-        f"{cooling_msg}\n\n"
+        f"*🔥 TRADOR STATUS*\n\n"
+        f"Mode: {mode_emoji} | Direction: `{direction.upper()}`\n"
+        f"Wallet: {wallet} | Strategy: `{strategy}`\n"
+        f"Trading: {trading}{cooling_msg}\n"
+        f"Open Positions: {pos_count}\n\n"
         f"*24h Performance*\n"
         f"Trades: {perf_data.get('24h', {}).get('trades', 0)}\n"
         f"Win Rate: {perf_data.get('24h', {}).get('win_rate', 0)}%\n"
@@ -69,6 +73,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*🚀 Start* — Aktifkan trading\n"
         "*🛑 Stop* — Matikan trading\n"
         "*💰 Balance* — Lihat balance\n"
+        "*🧠 Smart Mode* — Auto trading + Hermes smart\n"
+        "*🔗 Wallet* — Connect exchange (Binance/Bybit/OKX)\n"
+        "*🎮 Mode* — LIVE / DRY RUN\n"
+        "*📐 Direction* — LONG / SHORT / BOTH\n"
+        "*⚡ Quick Actions* — Instant execution\n"
         "*❓ Help* — Help menu ini"
     )
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=main_menu_keyboard())

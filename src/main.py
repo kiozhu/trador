@@ -14,18 +14,19 @@ from .memory import TradeLog, PerformanceTracker, StateManager
 from .trading import TradingEngine, PositionManager
 from .llm import LLMScorer
 from .comm import HermesReporter, HermesReader
-from .telegram.handlers import (
+from .tg_bot.handlers import (
     setup_menu_handlers,
     setup_position_handlers,
     setup_strategy_handlers,
     setup_trade_handlers,
     setup_smart_handlers,
     setup_quick_handlers,
+    setup_wallet_handlers,
+    setup_mode_handlers,
+    setup_direction_handlers,
 )
-from .telegram.keyboards import (
+from .tg_bot.keyboards import (
     main_menu_keyboard,
-    smart_mode_keyboard,
-    quick_actions_keyboard,
 )
 
 
@@ -90,6 +91,9 @@ class Trador:
         setup_trade_handlers(self.app, self.trade_log)
         setup_smart_handlers(self.app, self.state_mgr, self.loader, self.perf)
         setup_quick_handlers(self.app, self.state_mgr, self.engine, self.loader)
+        setup_wallet_handlers(self.app, self.state_mgr)
+        setup_mode_handlers(self.app, self.state_mgr)
+        setup_direction_handlers(self.app, self.state_mgr)
 
         # ── Text button handlers ─────────────────────────────────────────────
         @self.app.on_message(filters.TEXT & ~filters.COMMAND)
@@ -112,26 +116,23 @@ class Trador:
                     reply_markup=main_menu_keyboard(),
                 )
             elif text == "🧠 Smart Mode":
-                from .telegram.handlers.smart_mode import cmd_smart_mode
+                from .tg_bot.handlers.smart_mode import cmd_smart_mode
                 await cmd_smart_mode(update, context, self.state_mgr, self.loader, self.perf)
             elif text == "⚡ Quick Actions":
-                from .telegram.handlers.quick_actions import cmd_quick_actions
+                from .tg_bot.handlers.quick_actions import cmd_quick_actions
                 await cmd_quick_actions(update, context)
+            elif text == "🔗 Wallet":
+                from .tg_bot.handlers.wallet import cmd_wallet
+                await cmd_wallet(update, context, self.state_mgr)
+            elif text == "🎮 Mode":
+                from .tg_bot.handlers.wallet import cmd_mode
+                await cmd_mode(update, context, self.state_mgr)
+            elif text == "📐 Direction":
+                from .tg_bot.handlers.wallet import cmd_direction
+                await cmd_direction(update, context, self.state_mgr)
             elif text == "📋 View Orders":
-                from .telegram.handlers.quick_actions import view_orders
+                from .tg_bot.handlers.quick_actions import view_orders
                 await view_orders(update, context, self.engine, self.state_mgr)
-            elif text == "❌ Cancel All":
-                from .telegram.handlers.quick_actions import cancel_all_confirm
-                await cancel_all_confirm(update, context, self.engine)
-            elif text == "💸 Close All":
-                from .telegram.handlers.quick_actions import close_all_confirm
-                await close_all_confirm(update, context, self.engine)
-            elif text == "📈 Avg Entry":
-                from .telegram.handlers.quick_actions import avg_entry
-                await avg_entry(update, context, self.engine)
-            elif text == "🔍 Scan Market":
-                from .telegram.handlers.quick_actions import scan_market
-                await scan_market(update, context, self.engine, self.loader, self.state_mgr)
 
         # ── Hermes suggestion reader loop ────────────────────────────────────
         async def hermes_reader_loop():
