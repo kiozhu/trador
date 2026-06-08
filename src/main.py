@@ -24,6 +24,7 @@ from .tg_bot.handlers import (
     setup_wallet_handlers,
     setup_mode_handlers,
     setup_direction_handlers,
+    setup_pnl_handlers,
 )
 from .tg_bot.keyboards import (
     main_menu_keyboard,
@@ -94,6 +95,7 @@ class Trador:
         setup_wallet_handlers(self.app, self.state_mgr)
         setup_mode_handlers(self.app, self.state_mgr)
         setup_direction_handlers(self.app, self.state_mgr)
+        setup_pnl_handlers(self.app)
 
         # ── Text button handlers ─────────────────────────────────────────────
         @self.app.on_message(filters.TEXT & ~filters.COMMAND)
@@ -130,6 +132,9 @@ class Trador:
             elif text == "📐 Direction":
                 from .tg_bot.handlers.wallet import cmd_direction
                 await cmd_direction(update, context, self.state_mgr)
+            elif text == "📊 PnL Chart":
+                from .tg_bot.handlers.pnl import cmd_pnl
+                await cmd_pnl(update, context)
             elif text == "📋 View Orders":
                 from .tg_bot.handlers.quick_actions import view_orders
                 await view_orders(update, context, self.engine, self.state_mgr)

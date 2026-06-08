@@ -6,6 +6,7 @@ from .trades import setup_trade_handlers
 from .smart_mode import setup_smart_handlers
 from .quick_actions import setup_quick_handlers
 from .wallet import setup_wallet_handlers, setup_mode_handlers, setup_direction_handlers
+from .pnl import setup_pnl_handlers
 
 __all__ = [
     "setup_menu_handlers",
@@ -17,4 +18,5 @@ __all__ = [
     "setup_wallet_handlers",
     "setup_mode_handlers",
     "setup_direction_handlers",
+    "setup_pnl_handlers",
 ]
