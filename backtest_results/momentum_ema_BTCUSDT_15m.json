@@ -1,0 +1,17 @@
+{
+  "strategy_id": "momentum_ema",
+  "symbol": "BTCUSDT",
+  "timeframe": "15m",
+  "start_date": "2026-06-01T21:15:00",
+  "end_date": "2026-06-08T21:00:00",
+  "total_trades": 6,
+  "winning_trades": 3,
+  "losing_trades": 3,
+  "win_rate": 50.0,
+  "total_pnl_pct": -0.0869,
+  "total_pnl_usd": -6.77,
+  "max_drawdown_pct": 8.03,
+  "profit_factor": 0.46,
+  "avg_trade_pct": -0.1011,
+  "avg_trade_duration_min": 15.0
+}

@@ -1,0 +1,17 @@
+{
+  "strategy_id": "scalp_rapid",
+  "symbol": "BTCUSDT",
+  "timeframe": "15m",
+  "start_date": "2026-06-01T21:15:00",
+  "end_date": "2026-06-08T21:00:00",
+  "total_trades": 18,
+  "winning_trades": 8,
+  "losing_trades": 10,
+  "win_rate": 44.44,
+  "total_pnl_pct": -0.0794,
+  "total_pnl_usd": -5.78,
+  "max_drawdown_pct": 3.06,
+  "profit_factor": 0.46,
+  "avg_trade_pct": -0.0671,
+  "avg_trade_duration_min": 15.0
+}

@@ -1,0 +1,17 @@
+{
+  "strategy_id": "funding_arbitrage",
+  "symbol": "BTCUSDT",
+  "timeframe": "15m",
+  "start_date": "2026-06-01T21:30:00",
+  "end_date": "2026-06-08T21:15:00",
+  "total_trades": 5,
+  "winning_trades": 3,
+  "losing_trades": 2,
+  "win_rate": 60.0,
+  "total_pnl_pct": -0.0764,
+  "total_pnl_usd": -5.64,
+  "max_drawdown_pct": 10.03,
+  "profit_factor": 0.57,
+  "avg_trade_pct": -0.0727,
+  "avg_trade_duration_min": 15.0
+}
