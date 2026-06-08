@@ -1,6 +1,6 @@
 # Trador
 
-Bot trading crypto futures otomatis — berdiri sendiri tanpa Hermes, dikontrol via Telegram.
+Bot trading crypto futures otomatis — sangat dibagus jika digunakan bersama Hermes agen yang bisa belajar dari kesalahan dan terus memperbaiki diri, dikontrol via Telegram.
 
 **Trador = BODY (eksekutor).** Ikuti strategi persis. **Hermes = CONTROLLER** yang bisa modify strategy files. LLM hanya scoring kualitas eksekusi, tidak pernah ubah strategi.
 
