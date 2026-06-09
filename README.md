@@ -339,12 +339,100 @@ Hermes Agent (aku) = **self-improvement engine** untuk Trador. Fokus aja ke impr
          Trador auto-read updated params
 ```
 
-**Cron Job Hermes:**
+---
+
+### 📚 Tutor: Cara Aktifkan Hermes Self-Improve
+
+**1. Buat cron job (every 15 menit):**
+```bash
+hermes cron create \
+  --name "trador-self-improve" \
+  --schedule "every 15m" \
+  --skill "trador-admin" \
+  --prompt "You are the Trador self-improvement agent. Your job: every 15 minutes, assess the Trador trading bot... [full prompt lihat bawah]" \
+  --deliver "origin"
 ```
-Name:  trador-self-improve
-Every: 15 minutes
-Task:  Baca trade history → Analisa → Edit strategy YAML langsung
+
+**2. Lihat semua cron job:**
+```bash
+hermes cron list
 ```
+
+**3. Lihat detail cron job tertentu:**
+```bash
+hermes cron list | grep trador
+```
+
+**4. Hapus cron job:**
+```bash
+hermes cron remove <job_id>
+```
+
+**5. Pause/resume cron job:**
+```bash
+hermes cron pause <job_id>
+hermes cron resume <job_id>
+```
+
+---
+
+### 📝 Prompt untuk Cron Job Hermes Self-Improve
+
+Gunakan prompt ini saat membuat cron job:
+
+```
+You are the Trador self-improvement agent. Your job: every 15 minutes, assess the Trador trading bot state and directly edit strategy YAML files if improvements are found.
+
+## Your role
+- Hermes = self-improvement engine (focused, memory-clean)
+- Trador = executor body (reasoning + execution separated)
+- You NEVER touch execution — only improve strategy params
+
+## Files
+- Trade history: /home/ubuntu/trador/memory/trade_history.json
+- Strategy YAML: /home/ubuntu/trador/src/strategy/*.yaml
+- State: /home/ubuntu/trador/memory/state.json
+
+## Your task each run
+1. Read trade history — extract last 20 trades
+2. Calculate win rate per strategy
+3. Identify underperforming strategies (WR < 40% in last 20 trades)
+4. If found: directly edit the strategy YAML file with adjustments
+5. Call StrategyLoader.reload() to apply changes
+6. Save improvement lesson to Hermes memory
+
+## Adjustment rules (HARD LIMITS)
+- Max leverage: 20x (never exceed)
+- Max SL (price%): 6% for 3x, 4% for 5x, 2% for 8x, 1.5% for 10x, 0.75% for 20x
+- Max TP (price%): 8% for 3x, 6% for 5x, 3% for 8x, 2% for 10x, 1% for 20x
+- Max position_size:0.20 (20% of balance)
+- Min position_size: 0.02 (2% of balance)
+- Never change more than 20% in one adjustment
+
+## If no improvement needed: SILENT (no output)
+Only write to memory if you made an actual change.
+```
+
+---
+
+### 📋 Cron Job Management Cheatsheet
+
+| Perintah | Fungsi |
+|---------|--------|
+| `hermes cron list` | Lihat semua cron job |
+| `hermes cron list \| grep trador` | Lihat cron job Trador saja |
+| `hermes cron remove <job_id>` | Hapus cron job |
+| `hermes cron pause <job_id>` | Pause cron job |
+| `hermes cron resume <job_id>` | Resume cron job |
+| `hermes cron run <job_id>` | Run sekarang (test) |
+
+**Contoh output saat Hermes improve:**
+```
+📊 Improved whale_rider: WR38% → reduced position_size 0.15→0.10, SL 1.0%→1.2%
+📊 Improved scalp_rapid: WR 35% → reduced leverage 10x→8x
+```
+
+---
 
 ---
 
