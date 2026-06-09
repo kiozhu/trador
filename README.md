@@ -285,30 +285,68 @@ Default: semua 11 strategi **AKTIF**.
 
 ---
 
-## 🤖 Smart Mode
+## 🤖 Hermes Comm (Smart Mode)
 
-Smart Mode = Hermes Agent sebagai **passive controller**.
+Hermes Comm = communication layer antara **Hermes Agent** (kamu ngobrol sama aku) dan **Trador** (trading bot) via JSON files.
 
 **Arsitektur:**
 ```
-Hermes (CONTROLLER) ←→ JSON files ←→ Trador (BODY/executor)
+┌─────────────────────────────────────────────────────────┐
+│  TRADOR BOT (executor body)                             │
+│  • Execute trades                                       │
+│  • Write reports → shared/trador_reports/               │
+└──────────────────┬──────────────────────────────────────┘
+                   ↓ write JSON
+ shared/trador_reports/
+         ├── trades.json      ← trade results
+         ├── status.json      ← bot status
+         └── metrics.json     ← 24h metrics
+                   │ read (cron job 15 menit)
+                   ↓
+┌─────────────────────────────────────────────────────────┐
+│  HERMES AGENT (this bot — kamu ngobrol sama aku)         │
+│  • Baca reports │
+│  • Analisa dengan LLM                                   │
+│  • Write suggestions → shared/hermes_suggestions/ │
+└──────────────────┬──────────────────────────────────────┘
+                   │ Trador auto-read& apply
+                   ↓
+         shared/hermes_suggestions/pending/
+         └── suggestion JSON files
+                   │
+                   ↓ (auto-processed)
+         Strategy files di src/strategy/
 ```
 
-**Alur:**
-1. Trador selesai trade → write report JSON
-2. Hermes baca report → analisis → write suggestions JSON
-3. Trador baca suggestions → adjust params (jika有必要)
+**Cron Job Hermes:**
+```
+Name:  trador-hermes-reader
+Every: 15 minutes
+Task:  Baca trades.json → Analisa → Tulis suggestion
+```
+
+**Perintah managing cron job:**
+```bash
+# Lihat semua cron job
+hermes cron list
+
+# Lihat detail (nama, schedule, next run)
+hermes cron list | grep trador
+
+# Hapus cron job
+/hermes cron remove <job_id>
+```
+
+**Yang DILAKUKAN Hermes (passive):**
+- ✅ Analisa win rate per strategi
+- ✅ Suggest position size adjustments
+- ✅ Identify market regime patterns
+- ✅ Recommend strategy params
 
 **Yang TIDAK dilakukan Hermes:**
 - ❌ Touch execution langsung
 - ❌ Buka/tutup posisi
-- ❌ Ganti strategy files
-
-**Yang DILAKUKAN Hermes:**
-- ✅ Analisa trade reports
-- ✅ Suggest position size adjustments
-- ✅ Identify market regime patterns
-- ✅ Recommend strategy参数
+- ❌ Ganti strategy files langsung
 
 ---
 
@@ -503,6 +541,10 @@ trador/
 │   ├── performance.json
 │   ├── dry_run/
 │   └── live/
+├── shared/                # Hermes Comm (JSON reports/suggestions)
+│   ├── trador_reports/    # ← Trador writes (trades.json, status.json)
+│   └── hermes_suggestions/ # ← Hermes writes (pending/ suggestions)
+│       └── pending/
 ├── strategies/           # Strategy YAML files
 │   ├── whale_rider.yaml
 │   └── ...
