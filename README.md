@@ -6,22 +6,40 @@ Bot trading crypto futures otomatis — dikontrol penuh via Telegram. Didukung 1
 
 ---
 
+## ✨ Kelebihan Sistem
+
+| # | Kelebihan | Penjelasan |
+|---|-----------|------------|
+| 1 | **11 Strategi Auto** | Semua strategi berjalan otomatis — whale rider, funding arbitrage, grid hunter, scalp rapid, swing stealth, breakout pro, fvg catcher, liquidation hunter, orderblock hunter, liquidity sweep, momentum EMA |
+| 2 | **6 Scanner Real-time** | Whale, liquidation, orderbook, volume profile, funding rate, SMC — semua dapat data dari public API (gratis, tanpa API key) |
+| 3 | **6 Exch +1 Wallet** | Binance Futures + Hyperliquid. Tidak ada Bybit/OKX. Hyperliquid tanpa wallet address — hanya API key + secret |
+| 4 | **Hermes Comm Layer** | Communication via JSON files — Trador write reports, Hermes baca + analise + write suggestions. Pemisahan peran sempurna: Hermes passive only |
+| 5 | **Smart Mode + LLM** | LLM-driven position sizing. Input API key LLM → validasi → konfirmasi. Cycle interval dengan deskripsi. Daily loss limit dalam dollar (bukan %) |
+| 6 | **Dry Run + Live** | Dry run balance $100 (bukan $50k). Live balance sync dari wallet API. Tidak ada input manual untuk live |
+| 7 | **Inline Keyboard Menu** | Semua menu pakai InlineKeyboardMarkup — trojan-style callback, tidak pakai ReplyKeyboardMarkup. Emoji di kiri tombol |
+| 8 | **A-Z Coin Filter** | Symbol pool dari Binance Futures real data (50 coins). Filter huruf A-Z langsung dari keyboard, tidak perlu text input |
+| 9 | **Backtesting** | Equity curve + drawdown chart + Sharpe/Sortino/Max Drawdown metrics |
+| 10 | **Zero Credentials in Git** | `.env` selalu unstaged sebelum commit. Tidak ada API key/secret/token di Git history |
+
+---
+
 ## 📋 Daftar Isi
 
-1. [Ringkasan](#-ringkasan)
-2. [Persyaratan](#-persyaratan)
-3. [Instalasi](#-instalasi)
-4. [Konfigurasi](#-konfigurasi)
-5. [Menu Telegram](#-menu-telegram)
-6. [Strategi](#-strategi)
-7. [Scanners](#-scanners)
-8. [Mode Trading](#-mode-trading)
-9. [Wallet Connect](#-wallet-connect)
-10. [Smart Mode](#-smart-mode)
-11. [Backtesting](#-backtesting)
-12. [FAQ](#-faq)
-13. [Troubleshooting](#-troubleshooting)
-14. [Struktur Folder](#-struktur-folder)
+1. [Kelebihan](#-kelebihan-sistem)
+2. [Ringkasan](#-ringkasan)
+3. [Persyaratan](#-persyaratan)
+4. [Instalasi](#-instalasi)
+5. [Konfigurasi](#-konfigurasi)
+6. [Menu Telegram](#-menu-telegram)
+7. [Strategi](#-strategi)
+8. [Scanners](#-scanners)
+9. [Mode Trading](#-mode-trading)
+10. [Wallet Connect](#-wallet-connect)
+11. [Hermes Comm](#-hermes-comm-smart-mode)
+12. [Backtesting](#-backtesting)
+13. [FAQ](#-faq)
+14. [Troubleshooting](#-troubleshooting)
+15. [Struktur Folder](#-struktur-folder)
 
 ---
 
