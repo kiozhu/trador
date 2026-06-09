@@ -11,7 +11,7 @@ class StrategyLoader:
     def __init__(self, strategies_dir: Path):
         self.strategies_dir = Path(strategies_dir)
         self.strategies: dict[str, dict] = {}
-        self.active_id: str | None = None
+        self.active_ids: set[str] = set()  # multiple active strategies
 
     def load_all(self) -> None:
         """Load all strategy JSON files from strategies directory."""
@@ -35,24 +35,53 @@ class StrategyLoader:
         if not self.strategies:
             log.warning("No strategies loaded from %s", self.strategies_dir)
 
+        # ── Activate ALL strategies by default ────────────────────────────
+        for sid in self.strategies:
+            self.active_ids.add(sid)
+        log.info("All %d strategies activated by default", len(self.active_ids))
+
     def get(self, strategy_id: str) -> dict[str, Any] | None:
         """Get strategy by ID."""
         return self.strategies.get(strategy_id)
 
     def set_active(self, strategy_id: str) -> bool:
-        """Set active strategy."""
+        """Add strategy to active set (multi-strategy support)."""
         if strategy_id not in self.strategies:
             log.error("Cannot activate unknown strategy: %s", strategy_id)
             return False
-        self.active_id = strategy_id
-        log.info("Active strategy set to: %s", strategy_id)
+        self.active_ids.add(strategy_id)
+        log.info("Strategy activated: %s (active: %s)", strategy_id, self.list_active_ids())
         return True
 
+    def set_inactive(self, strategy_id: str) -> bool:
+        """Remove strategy from active set."""
+        if strategy_id in self.active_ids:
+            self.active_ids.discard(strategy_id)
+            log.info("Strategy deactivated: %s (active: %s)", strategy_id, self.list_active_ids())
+        return True
+
+    def toggle(self, strategy_id: str) -> bool:
+        """Toggle strategy active/inactive."""
+        if strategy_id not in self.strategies:
+            return False
+        if strategy_id in self.active_ids:
+            return self.set_inactive(strategy_id)
+        return self.set_active(strategy_id)
+
+    def list_active_ids(self) -> list[str]:
+        """List IDs of active strategies."""
+        return list(self.active_ids)
+
+    def list_active(self) -> list[dict[str, Any]]:
+        """List all active strategy dicts."""
+        return [self.strategies[sid] for sid in self.active_ids if sid in self.strategies]
+
     def active(self) -> dict[str, Any] | None:
-        """Get active strategy."""
-        if not self.active_id:
+        """Get first active strategy (backward compat)."""
+        if not self.active_ids:
             return None
-        return self.strategies.get(self.active_id)
+        first = next(iter(self.active_ids))
+        return self.strategies.get(first)
 
     def reload(self, strategy_id: str) -> bool:
         """Reload a single strategy file."""

@@ -186,17 +186,21 @@ class WhaleScanner:
             await asyncio.sleep(10)
 
     async def _poll_dexscreener(self):
-        """Fetch recent trades from DexScreener for tracked symbols."""
+        """Fetch recent trades from DexScreener for tracked symbols (HTTPS REST, not WS)."""
+        import httpx
         for symbol in self.symbols:
             if not self._running:
                 break
             try:
-                # DexScreener API: fetch recent trades for pair
-                url = f"https://api.dexscreener.com/dex/v1/trades?chain=bsc&tokenSymbol={symbol.upper().replace('USDT', '')}"
+                # DexScreener REST API — no auth needed
+                token = symbol.upper().replace("USDT", "")
+                url = f"https://api.dexscreener.com/dex/v1/trades?chain=bsc&tokenSymbol={token}"
                 async with asyncio.timeout(10):
-                    async with websockets.connect(url) as ws:
-                        raw = await ws.recv()
-                self._process_dexscreener_message(raw, symbol)
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.get(url, headers={"Accept": "application/json"})
+                if resp.status_code != 200:
+                    continue
+                self._process_dexscreener_message(resp.text, symbol)
             except Exception as e:
                 # DexScreener may not have the pair; skip silently
                 log.debug("WhaleScanner[DexScreener] no data for %s: %s", symbol, e)

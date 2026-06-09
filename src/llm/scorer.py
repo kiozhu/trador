@@ -1,4 +1,4 @@
-"""LLM scorer — score execution quality only, never changes strategy"""
+"""LLM scorer — score execution quality + smart position sizing"""
 import requests
 from ..utils.logger import log
 
@@ -9,6 +9,61 @@ class LLMScorer:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+
+    def position_size(self, balance: float, signal: dict, regime: str) -> float:
+        """Calculate position size % using LLM analysis.
+        Returns % of balance to risk (1.0 to max_position_pct).
+        """
+        prompt = f"""Kamu adalah POSITION SIZER untuk futures trading.
+
+Context:
+- Balance: ${balance:,.2f}
+- Signal: {signal.get('symbol')} {signal.get('side')} @ ${signal.get('entry_price'):.4f}
+- Score: {signal.get('score', 0)}/100
+- Regime: {regime}
+- Scanners: {', '.join(signal.get('scanner_signals', []))}
+
+Rules:
+- Max risk: 20% of balance per trade
+- Safe: 5-10% | Medium: 10-15% | Aggressive: 15-20%
+- Higher score = larger size
+- Bearish regime = smaller size (reduce exposure)
+- Whale/Liquidation signals = +3-5% size
+
+Return ONLY a number (1-20) representing % of balance to use.
+Example: 12.5
+"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "max_tokens": 10,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=20,
+            )
+            if response.status_code == 200:
+                text = response.json()["choices"][0]["message"]["content"].strip()
+                # Extract number
+                import re
+                nums = re.findall(r"\d+\.?\d*", text)
+                if nums:
+                    pct = float(nums[0])
+                    # Clamp between 1 and 20
+                    return max(1.0, min(20.0, pct))
+        except Exception as e:
+            log.debug("LLM position sizing error: %s", e)
+        # Fallback: rule-based
+        score = signal.get("score", 50)
+        base_pct = min(20, max(5, score / 5))  # score 50→10%, score 100→20%
+        if regime == "bearish":
+            base_pct *= 0.7
+        return round(base_pct, 1)
 
     def score(self, trade: dict) -> dict:
         """Score a trade's execution quality. Returns {score, reason, lesson}."""

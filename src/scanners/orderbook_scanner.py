@@ -66,6 +66,9 @@ class OrderbookScanner:
 
         # callbacks: (wall: WallEvent) -> None
         self._callbacks: list[Callable[[WallEvent], None]] = []
+        # Recent wall events (for AutoTrader scoring)
+        self._recent_walls: list[WallEvent] = []
+        self._max_walls = 50  # keep last N wall events
 
     # ── public ──────────────────────────────────────────────────────────────────
 
@@ -203,3 +206,9 @@ class OrderbookScanner:
                             cb(ev)
                         except Exception as e:
                             log.error("OrderbookScanner callback error: %s", e)
+
+                    # Store in recent walls for AutoTrader
+                    with self._lock:
+                        self._recent_walls.append(ev)
+                        if len(self._recent_walls) > self._max_walls:
+                            self._recent_walls = self._recent_walls[-self._max_walls:]

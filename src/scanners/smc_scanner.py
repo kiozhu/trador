@@ -34,7 +34,8 @@ import httpx
 from ..utils.logger import log
 
 # ── Binance REST ──────────────────────────────────────────────────────────────
-_BINANCE_KLINE = "https://api.binance.com/api/v3/klines"
+# Futures API for klines (symbols like MRVLUSDT, XAUUSDT are futures-only)
+_BINANCE_KLINE = "https://fapi.binance.com/fapi/v1/klines"
 _BINANCE_SPOT  = "https://api.binance.com/api/v3/klines"
 _BTC_SYMBOL = "BTCUSDT"
 
@@ -491,7 +492,7 @@ class SMCScanner:
         """
         self.symbols = symbols or [
             "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT",
-            "XRPUDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT",
+            "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT",
         ]
         self.timeframe = timeframe
         self.poll_interval = poll_interval

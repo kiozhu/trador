@@ -111,11 +111,14 @@ class FundingScanner:
     async def _fetch_initial(self):
         """Fetch initial funding rates via REST."""
         try:
+            import requests as _req
             url = "https://fapi.binance.com/fapi/v1/premiumIndex"
             async with asyncio.timeout(15):
-                async with websockets.connect(url) as ws:
-                    raw = await ws.recv()
-            self._process_rest_message(raw)
+                # Run sync request in thread to avoid blocking
+                raw = await asyncio.to_thread(
+                    _req.get, url, timeout=10
+                )
+            self._process_rest_message(raw.text)
         except Exception as e:
             log.warning("FundingScanner[REST] initial fetch failed: %s", e)
 

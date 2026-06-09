@@ -8,42 +8,17 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
-# ── Patch Application to avoid closing inherited event loops ─────────────────
-_original_run = Application.run_polling
-async def _patched_run_polling(self, *args, **kwargs):
-    try:
-        await _original_run(self, *args, **kwargs)
-    finally:
-        # Don't close the event loop if it was already running before us
-        try:
-            loop = asyncio.get_running_loop()
-            if not loop.is_running():
-                pass  # normal case
-        except Exception:
-            pass
-Application.run_polling = _patched_run_polling
-
 from .utils.logger import log
 from .strategy import StrategyLoader, StrategyWatcher
 from .memory import TradeLog, PerformanceTracker, StateManager
-from .trading import TradingEngine, PositionManager
+from .trading import TradingEngine
+from .trading.auto_trader import AutoTrader
 from .llm import LLMScorer
 from .comm import HermesReporter, HermesReader
 from .tg_bot.handlers import (
-    setup_menu_handlers,
-    setup_position_handlers,
-    setup_strategy_handlers,
-    setup_trade_handlers,
-    setup_smart_handlers,
     setup_quick_handlers,
-    setup_wallet_handlers,
-    setup_mode_handlers,
-    setup_direction_handlers,
-    setup_pnl_handlers,
 )
-from .tg_bot.keyboards import (
-    main_menu_keyboard,
-)
+from .tg_bot.menu import setup_menu_router
 
 
 class Trador:
@@ -51,7 +26,6 @@ class Trador:
         self.running = False
         self.app: Application | None = None
         self.engine: TradingEngine | None = None
-        self.position_mgr = PositionManager()
         self.state_mgr: StateManager | None = None
         self.trade_log: TradeLog | None = None
         self.perf: PerformanceTracker | None = None
@@ -61,6 +35,7 @@ class Trador:
         self.hermes_reporter: HermesReporter | None = None
         self.hermes_reader: HermesReader | None = None
         self._reader_task: asyncio.Task | None = None
+        self.auto_trader: AutoTrader | None = None
 
     async def start(self):
         # Load env
@@ -100,28 +75,23 @@ class Trador:
         # Telegram bot
         self.app = Application.builder().token(telegram_token).build()
 
-        # Setup all handler groups
-        setup_menu_handlers(self.app, self.state_mgr, self.perf, self.engine)
-        setup_position_handlers(self.app, self.position_mgr)
-        setup_strategy_handlers(self.app, self.loader, strategies_dir, self.perf)
-        setup_trade_handlers(self.app, self.trade_log)
-        setup_smart_handlers(self.app, self.state_mgr, self.loader, self.perf)
+        # Setup handler groups — ONLY live handlers remain
         setup_quick_handlers(self.app, self.state_mgr, self.engine, self.loader)
-        setup_wallet_handlers(self.app, self.state_mgr)
-        setup_mode_handlers(self.app, self.state_mgr)
-        setup_direction_handlers(self.app, self.state_mgr)
-        setup_pnl_handlers(self.app)
+        setup_menu_router(self.app, self.state_mgr, self.perf, self.engine, self.trade_log, self.loader)
+
+        # ── Slash commands (sync with bot command menu) ───────────────────────
+        from .tg_bot.handlers.quick_actions import cmd_status, cmd_pnl, cmd_strategies, cmd_cancel_all, cmd_close_all
+        self.app.add_handler(CommandHandler("status", lambda u, c: cmd_status(u, c, self.state_mgr), block=False))
+        self.app.add_handler(CommandHandler("pnl", lambda u, c: cmd_pnl(u, c, self.state_mgr), block=False))
+        self.app.add_handler(CommandHandler("strategies", lambda u, c: cmd_strategies(u, c, self.loader), block=False))
+        self.app.add_handler(CommandHandler("cancel", lambda u, c: cmd_cancel_all(u, c, self.state_mgr), block=False))
+        self.app.add_handler(CommandHandler("closeall", lambda u, c: cmd_close_all(u, c, self.state_mgr), block=False))
 
         # ── Text button handlers ─────────────────────────────────────────────
         text_buttons = {
             "🚀 Start": self._handle_start,
             "🛑 Stop": self._handle_stop,
-            "🧠 Smart Mode": self._handle_smart_mode,
             "⚡ Quick Actions": self._handle_quick_actions,
-            "🔗 Wallet": self._handle_wallet,
-            "🎮 Mode": self._handle_mode,
-            "📐 Direction": self._handle_direction,
-            "📊 PnL Chart": self._handle_pnl,
             "📋 View Orders": self._handle_view_orders,
         }
 
@@ -159,46 +129,109 @@ class Trador:
 
         self.running = True
         log.info("Trador started!")
-        await self.app.run_polling(drop_pending_updates=True)
+
+        # Set bot command menu (hamburger icon) for Telegram UI
+        from telegram import BotCommand
+        commands = [
+            BotCommand("start", "🏠 Main menu"),
+            BotCommand("menu", "📋 Menu panel"),
+            BotCommand("help", "❓ Usage guide"),
+            BotCommand("status", "📊 Status & balance"),
+            BotCommand("strategies", "📈 Strategy list"),
+            BotCommand("pnl", "💰 Profit & loss"),
+            BotCommand("cancel", "🛑 Cancel all orders"),
+            BotCommand("closeall", "🔚 Close all positions"),
+            BotCommand("setlive", "💵 Set live balance"),
+            BotCommand("newdryrun", "🆕 New dry run"),
+        ]
+        await self.app.bot.set_my_commands(commands)
+
+        # Manual polling loop — avoids signal_handler issues of run_polling()
+        await self.app.initialize()
+        await self.app.start()
+
+        # Create a polling task to fetch updates into the update queue
+        async def poll_telegram():
+            last_update_id = 0
+            while self.running:
+                try:
+                    updates = await self.app.bot.get_updates(
+                        offset=last_update_id + 1,
+                        limit=10,
+                        timeout=5,
+                        allowed_updates=Update.ALL_TYPES,
+                    )
+                    if updates:
+                        log.info("Poll fetched %d updates", len(updates))
+                    for update in updates:
+                        self.app.update_queue.put_nowait(update)
+                        last_update_id = max(last_update_id, update.update_id)
+                    await asyncio.sleep(1)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    log.warning("Poll error: %s", e)
+                    await asyncio.sleep(5)
+
+        poll_task = asyncio.create_task(poll_telegram())
+
+        # Start AutoTrader
+        self.auto_trader = AutoTrader(
+            engine=self.engine,
+            state_mgr=self.state_mgr,
+            loader=self.loader,
+            trade_log=self.trade_log,
+            perf=self.perf,
+            scan_interval=15,
+            hermes_reporter=self.hermes_reporter,
+        )
+        await self.auto_trader.start()
+        log.info("AutoTrader started (interval=5s)")
+
+        try:
+            while self.running:
+                try:
+                    while not self.app.update_queue.empty():
+                        try:
+                            update = self.app.update_queue.get_nowait()
+                            await self.app.process_update(update)
+                        except Exception:
+                            pass
+                    await asyncio.sleep(1)
+                except asyncio.CancelledError:
+                    break
+        finally:
+            poll_task.cancel()
+            try:
+                await poll_task
+            except asyncio.CancelledError:
+                pass
+            await self.app.stop()
+            await self.app.shutdown()
+            log.info("Trador polling loop ended")
 
     # ── Button handlers ──────────────────────────────────────────────────────
     async def _handle_start(self, update, _):
         self.state_mgr.set_trading(True)
         self.state_mgr.set_status("running")
+        router = self.app.bot_data.get("menu_router")
+        _, reply_markup = (router.nav.build("main") if router else (None, None))
         await update.message.reply_text(
-            "🟢 *Trading started!*", parse_mode="Markdown", reply_markup=main_menu_keyboard(),
+            "🟢 *Trading started!*", parse_mode="Markdown", reply_markup=reply_markup,
         )
 
     async def _handle_stop(self, update, _):
         self.state_mgr.set_trading(False)
         self.state_mgr.set_status("stopped")
+        router = self.app.bot_data.get("menu_router")
+        _, reply_markup = (router.nav.build("main") if router else (None, None))
         await update.message.reply_text(
-            "🔴 *Trading stopped.*", parse_mode="Markdown", reply_markup=main_menu_keyboard(),
+            "🔴 *Trading stopped.*", parse_mode="Markdown", reply_markup=reply_markup,
         )
-
-    async def _handle_smart_mode(self, update, context):
-        from .tg_bot.handlers.smart_mode import cmd_smart_mode
-        await cmd_smart_mode(update, context, self.state_mgr, self.loader, self.perf)
 
     async def _handle_quick_actions(self, update, context):
         from .tg_bot.handlers.quick_actions import cmd_quick_actions
         await cmd_quick_actions(update, context)
-
-    async def _handle_wallet(self, update, context):
-        from .tg_bot.handlers.wallet import cmd_wallet
-        await cmd_wallet(update, context, self.state_mgr)
-
-    async def _handle_mode(self, update, context):
-        from .tg_bot.handlers.wallet import cmd_mode
-        await cmd_mode(update, context, self.state_mgr)
-
-    async def _handle_direction(self, update, context):
-        from .tg_bot.handlers.wallet import cmd_direction
-        await cmd_direction(update, context, self.state_mgr)
-
-    async def _handle_pnl(self, update, context):
-        from .tg_bot.handlers.pnl import cmd_pnl
-        await cmd_pnl(update, context)
 
     async def _handle_view_orders(self, update, context):
         from .tg_bot.handlers.quick_actions import view_orders
@@ -206,6 +239,8 @@ class Trador:
 
     async def stop(self):
         self.running = False
+        if self.auto_trader:
+            await self.auto_trader.stop()
         if self._reader_task:
             self._reader_task.cancel()
             try:
@@ -228,27 +263,20 @@ async def main():
         log.info("Interrupted, shutting down...")
     except Exception as e:
         # Suppress event loop errors from subprocess context
-        if "Cannot close a running event loop" in str(e):
+        if "Cannot close a running event loop" in str(e) or "This event loop is already running" in str(e):
             log.info("Shutting down (event loop cleanup skipped)")
         else:
             log.error("Fatal error: %s", e)
-        try:
-            import asyncio
-            _ = asyncio.get_running_loop()
-        except Exception:
-            pass
-        sys.exit(1)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
+    import asyncio, sys, traceback
     try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "Cannot close a running event loop" in str(e):
-            pass  # Suppress — inherited loop from PTY shell
-        elif "set_wakeup_fd" in str(e):
-            pass  # Suppress — signal in non-main thread
-        else:
-            raise
-    except SystemExit:
-        pass
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main())
+    except BaseException:
+        with open('/tmp/trador_err.log', 'w') as f:
+            traceback.print_exc(file=f)
+        sys.exit(0)

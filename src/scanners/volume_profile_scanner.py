@@ -1,6 +1,6 @@
 """Volume profile scanner — Binance REST klines (no API key).
 
-REST endpoint: https://api.binance.com/api/v3/klines
+REST endpoint: https://fapi.binance.com/fapi/v1/klines
 Computes POC (Point of Control), VAH (Value Area High), VAL (Value Area Low).
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ import requests
 
 log = logging.getLogger(__name__)
 
-BINANCE_KLINE_URL = "https://api.binance.com/api/v3/klines"
+BINANCE_KLINE_URL = "https://fapi.binance.com/fapi/v1/klines"
 
 
 @dataclass

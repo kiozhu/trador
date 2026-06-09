@@ -28,6 +28,23 @@ class StateManager:
                 "last_trade_at": None,
                 "last_report_at": None,
                 "cooling_until": None,
+                # ── Dry Run Balance ──────────────────────────────────────────────
+                "dry_run_initial_balance": 10000.0,
+                "dry_run_balance": 10000.0,
+                "dry_run_trades": 0,
+                # ── Live Balance (real exchange) ─────────────────────────────────
+                "live_balance": 0.0,
+                "live_initial_balance": 0.0,
+                "live_trades": 0,
+                # ── Position Sizing ─────────────────────────────────────────────
+                "llm_enabled": False,
+                "position_sizing_mode": "fixed_percent",  # "fixed_percent" | "llm_smart"
+                "balance_per_trade_pct": 10.0,             # % of balance per trade (fixed mode)
+                "max_orders_per_cycle": 2,
+                "max_concurrent_positions": 5,
+                "daily_loss_limit": 50.0,                   # $ max daily loss (not %)
+                "cycle_interval": 15,
+                "symbol_pool_size": 20,
             })
 
     def get(self) -> dict[str, Any]:
@@ -35,7 +52,7 @@ class StateManager:
 
     def set(self, key: str, value: Any) -> None:
         """Set a single key-value pair."""
-        self.update({key: value})
+        self.update(**{key: value})
 
     def update(self, **kwargs) -> None:
         data = self.get()
