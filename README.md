@@ -305,7 +305,7 @@ Default: semua 11 strategi **AKTIF**.
 
 ## 🤖 Hermes Self-Improve
 
-Hermes Agent (aku) = **self-improvement engine** untuk Trador. Fokus aja ke improvement, tidak ikut campur execution.
+Hermes Agent = **self-improvement engine** untuk Trador. Fokus aja ke improvement, tidak ikut campur execution.
 
 **Prinsip:**
 - ✅ Edit strategy YAML files langsung (leverage, position size, SL/TP params)
