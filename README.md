@@ -13,7 +13,7 @@ Bot trading crypto futures otomatis — dikontrol penuh via Telegram. Didukung 1
 | 1 | **11 Strategi Auto** | Semua strategi berjalan otomatis — whale rider, funding arbitrage, grid hunter, scalp rapid, swing stealth, breakout pro, fvg catcher, liquidation hunter, orderblock hunter, liquidity sweep, momentum EMA |
 | 2 | **6 Scanner Real-time** | Whale, liquidation, orderbook, volume profile, funding rate, SMC — semua dapat data dari public API (gratis, tanpa API key) |
 | 3 | **6 Exch +1 Wallet** | Binance Futures + Hyperliquid. Tidak ada Bybit/OKX. Hyperliquid tanpa wallet address — hanya API key + secret |
-| 4 | **Hermes Comm Layer** | Communication via JSON files — Trador write reports, Hermes baca + analise + write suggestions. Pemisahan peran sempurna: Hermes passive only |
+| 4 | **Hermes Self-Improve** | Direct edit strategy YAML files. Fokus improvement only, tidak interfere execution. LLM separated — hanya untuk improvement tasks, bukan trading decisions |
 | 5 | **Smart Mode + LLM** | LLM-driven position sizing. Input API key LLM → validasi → konfirmasi. Cycle interval dengan deskripsi. Daily loss limit dalam dollar (bukan %) |
 | 6 | **Dry Run + Live** | Dry run balance $100 (bukan $50k). Live balance sync dari wallet API. Tidak ada input manual untuk live |
 | 7 | **Inline Keyboard Menu** | Semua menu pakai InlineKeyboardMarkup — trojan-style callback, tidak pakai ReplyKeyboardMarkup. Emoji di kiri tombol |
@@ -35,7 +35,7 @@ Bot trading crypto futures otomatis — dikontrol penuh via Telegram. Didukung 1
 8. [Scanners](#-scanners)
 9. [Mode Trading](#-mode-trading)
 10. [Wallet Connect](#-wallet-connect)
-11. [Hermes Comm](#-hermes-comm-smart-mode)
+11. [Hermes Self-Improve](#-hermes-self-improve)
 12. [Backtesting](#-backtesting)
 13. [FAQ](#-faq)
 14. [Troubleshooting](#-troubleshooting)
@@ -303,68 +303,48 @@ Default: semua 11 strategi **AKTIF**.
 
 ---
 
-## 🤖 Hermes Comm (Smart Mode)
+## 🤖 Hermes Self-Improve
 
-Hermes Comm = communication layer antara **Hermes Agent** (kamu ngobrol sama aku) dan **Trador** (trading bot) via JSON files.
+Hermes Agent (aku) = **self-improvement engine** untuk Trador. Fokus aja ke improvement, tidak ikut campur execution.
+
+**Prinsip:**
+- ✅ Edit strategy YAML files langsung (leverage, position size, SL/TP params)
+- ✅ Analisa win rate per strategi → adjust params
+- ✅ Identify losing strategies → reduce exposure
+- ❌ TIDAK interfere reasoning/eksekusi trade
+- ❌ TIDAK buka/tutup posisi
+- ❌ TIDAK gunakan LLM untuk trading analysis (LLM only untuk improvement saat perlu)
+
+**LLM separation:**
+- LLM calls = ONLY untuk self-improvement tasks
+- Trading reasoning = tanggung jawab Trador sendiri
+- Memory Hermes = bersih, fokus ke improvement lessons
 
 **Arsitektur:**
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  TRADOR BOT (executor body)                             │
-│  • Execute trades                                       │
-│  • Write reports → shared/trador_reports/               │
+│  HERMES AGENT (self-improvement only)                   │
+│  • Baca trade history │
+│  • Edit strategy YAML files langsung │
+│  • Simpan improvement lessons                          │
+│  • TIDAK gunakan LLM untuk trading decisions │
 └──────────────────┬──────────────────────────────────────┘
-                   ↓ write JSON
- shared/trador_reports/
-         ├── trades.json      ← trade results
-         ├── status.json      ← bot status
-         └── metrics.json     ← 24h metrics
-                   │ read (cron job 15 menit)
-                   ↓
-┌─────────────────────────────────────────────────────────┐
-│  HERMES AGENT (this bot — kamu ngobrol sama aku)         │
-│  • Baca reports │
-│  • Analisa dengan LLM                                   │
-│  • Write suggestions → shared/hermes_suggestions/ │
-└──────────────────┬──────────────────────────────────────┘
-                   │ Trador auto-read& apply
-                   ↓
-         shared/hermes_suggestions/pending/
-         └── suggestion JSON files
+                   ↓ edit YAML langsung
+         src/strategy/*.yaml
                    │
-                   ↓ (auto-processed)
-         Strategy files di src/strategy/
+                   ↓ (auto-reload)
+ StrategyLoader.reload()
+ │
+                   ↓
+         Trador auto-read updated params
 ```
 
 **Cron Job Hermes:**
 ```
-Name:  trador-hermes-reader
+Name:  trador-self-improve
 Every: 15 minutes
-Task:  Baca trades.json → Analisa → Tulis suggestion
+Task:  Baca trade history → Analisa → Edit strategy YAML langsung
 ```
-
-**Perintah managing cron job:**
-```bash
-# Lihat semua cron job
-hermes cron list
-
-# Lihat detail (nama, schedule, next run)
-hermes cron list | grep trador
-
-# Hapus cron job
-/hermes cron remove <job_id>
-```
-
-**Yang DILAKUKAN Hermes (passive):**
-- ✅ Analisa win rate per strategi
-- ✅ Suggest position size adjustments
-- ✅ Identify market regime patterns
-- ✅ Recommend strategy params
-
-**Yang TIDAK dilakukan Hermes:**
-- ❌ Touch execution langsung
-- ❌ Buka/tutup posisi
-- ❌ Ganti strategy files langsung
 
 ---
 
