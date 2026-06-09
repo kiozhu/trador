@@ -1,10 +1,8 @@
-# Trador
+# Trador — Automated Crypto Futures Trading Bot
 
-Bot trading crypto futures otomatis — sangat dibagus jika digunakan bersama Hermes agen yang bisa belajar dari kesalahan dan terus memperbaiki diri, dikontrol via Telegram.
+Bot trading crypto futures otomatis — dikontrol penuh via Telegram. Didukung 11 strategi, 6 scanners market, backtesting, dan Smart Mode dengan LLM.
 
-**Trador = BODY (eksekutor).** Ikuti strategi persis. **Hermes = CONTROLLER** yang bisa modify strategy files. LLM hanya scoring kualitas eksekusi, tidak pernah ubah strategi.
-
-> Kalau Hermes jatuh, Trador tetap jalan. Hercules tetap makan.
+> **Trador = BODY (eksekutor).** Dieksekusi persis. **Hermes = CONTROLLER** yang menganalisa hasil dan memberi saran. Jangan pernah ada credentials di committed code.
 
 ---
 
@@ -18,16 +16,12 @@ Bot trading crypto futures otomatis — sangat dibagus jika digunakan bersama He
 6. [Strategi](#-strategi)
 7. [Scanners](#-scanners)
 8. [Mode Trading](#-mode-trading)
-9. [Direction](#-direction)
-10. [Wallet Connect](#-wallet-connect)
-11. [PnL Chart](#-pnl-chart)
-12. [Smart Mode](#-smart-mode)
-13. [Quick Actions](#-quick-actions)
-14. [Hermes Integration](#-hermes-integration)
-15. [Role Separation](#-role-separation)
-16. [Struktur Folder](#-struktur-folder)
-17. [API Endpoints](#-api-endpoints)
-18. [Troubleshooting](#-troubleshooting)
+9. [Wallet Connect](#-wallet-connect)
+10. [Smart Mode](#-smart-mode)
+11. [Backtesting](#-backtesting)
+12. [FAQ](#-faq)
+13. [Troubleshooting](#-troubleshooting)
+14. [Struktur Folder](#-struktur-folder)
 
 ---
 
@@ -36,54 +30,76 @@ Bot trading crypto futures otomatis — sangat dibagus jika digunakan bersama He
 ```
 Trador
 ├── Telegram Bot      ← kontrol di sini
-├── Trading Engine    ← ccxt → Binance Futures
-├── Strategy Config   ← JSON files, hot-reload
+├── Trading Engine    ← ccxt → Binance Futures / Hyperliquid
+├── Strategy Config   ← YAML files, hot-reload
 ├── Memory System     ← trade history, performance
-├── Scanners         ← market data real-time
-├── LLM Scorer       ← scoring kualitas eksekusi
-└── Hermes Comm      ← file-based JSON reports/suggestions
+├── 6 Scanners        ← market data real-time
+├── LLM Scorer        ← scoring kualitas eksekusi
+└── Hermes Comm       ← file-based JSON reports/suggestions
 ```
 
 **Fitur utama:**
-- 11 strategi trading
+- 11 strategi trading (Whale Rider, EMA Cross, MACD Reversal, RSI Extreme, dll.)
 - 6 scanner market real-time (liquidation, orderbook, whales, funding rate, volume profile, SMC)
 - Live Mode / Dry Run Mode
-- Long / Short / Both direction
-- Wallet connect ke Binance, Bybit, OKX
-- PnL chart (24h / 7d / 30d / all)
-- Smart Mode — auto switch strategi terbaik
-- Telegram control panel lengkap
-- Berdiri sendiri tanpa Hermes
+- Hyperliquid + Binance Futures support
+- Backtesting dengan equity curve + drawdown
+- Smart Mode: LLM-driven position sizing via Hermes passive controller
 
 ---
 
-## ✅ Persyaratan
+## 📦 Persyaratan
 
-- **Python 3.10+**
-- **Node.js 18+** (untuk بعض dependencies)
-- **Binance Futures account** (atau testnet)
-- **Telegram Bot Token** — dari @BotFather
-- **MiniMax API Key** — untuk LLM scorer (opsional)
+- Python 3.10+
+- Node.js 20+ (untuk development)
+- Telegram Bot Token (dari @BotFather)
+- API Key + Secret dari Binance Futures ATAU Hyperliquid
+- Hermes Agent (opsional — untuk Smart Mode + self-improvement)
 
 ---
 
 ## 🚀 Instalasi
 
 ```bash
-# 1. Clone
-git clone git@github.com:kiozhu/trador.git
+# Clone repo
+git clone https://github.com/kiozhu/trador.git
 cd trador
 
-# 2. Virtual environment
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
-
-# 3. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 4. Setup environment
+# Setup environment
 cp .env.example .env
+nano .env   # isi BOT_TOKEN, ADMIN_CHAT_ID, API keys
+```
+
+### Setup Python path
+
+```bash
+# Method 1: module flag (recommended)
+python3 -m src.main
+
+# Method 2: set PYTHONPATH
+export PYTHONPATH=src:$PYTHONPATH
+python3 src/main.py
+
+# Method 3: run from src/
+cd src && python3 main.py
+```
+
+### Start bot
+
+```bash
+python3 -m src.main
+# atau background:
+nohup python3 -m src.main > logs/trador.log 2>&1 &
+```
+
+### Restart
+
+```bash
+pkill -f "python3 -m src.main"
+python3 -m src.main
 ```
 
 ---
@@ -92,525 +108,339 @@ cp .env.example .env
 
 Edit file `.env`:
 
-```env
-# ── Telegram Bot ──────────────────────────────────────────────
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-
-# ── Exchange API (Binance Futures) ────────────────────────────
-BINANCE_API_KEY=your_binance_api_key
-BINANCE_API_SECRET=your_binance_api_secret
-TESTNET=false                    # true = testnet, false = real
-
-# ── Exchange API (Bybit) ─────────────────────────────────────
-BYBIT_API_KEY=your_bybit_api_key
-BYBIT_API_SECRET=your_bybit_api_secret
-
-# ── Exchange API (OKX) ───────────────────────────────────────
-OKX_API_KEY=your_okx_api_key
-OKX_API_SECRET=your_okx_api_secret
-OKX_PASSPHRASE=your_okx_passphrase
-
-# ── LLM Scorer (MiniMax) ─────────────────────────────────────
-MINIMAX_API_KEY=your_minimax_api_key
-
-# ── Misc ─────────────────────────────────────────────────────
-LOG_LEVEL=INFO
+```bash
+BOT_TOKEN=               # Telegram bot token (dari @BotFather)
+ADMIN_CHAT_ID=           # Telegram chat ID admin ( numeric ID )
+EXCHANGE=binance         # "binance" atau "hyperliquid"
+TESTNET_MODE=false       # true untuk testnet (Binance Testnet)
 ```
 
-### Cara dapat API Key Binance Futures
+**API Keys:**
 
-1. Login ke [binance.com](https://www.binance.com)
-2. Go to **Dashboard → API Management**
-3. Buat API Key baru — centang **Enable Futures**
-4. Simpan `API Key` dan `Secret Key`
-5. **PENTING:** Set IP whitelist (kosongkan untuk allow all, atau isi IP server)
-6. **PENTING:** Aktifkan **Enable Spot & Margin Trading** jika perlu
+| Exchange | Yang Dibutuhkan | Tidak Perlu |
+|----------|----------------|-------------|
+| Binance Futures | API Key + Secret | Wallet address |
+| Hyperliquid | API Key + Secret | Wallet address, seed phrase |
 
-> ⚠️ Jangan pernah share API Secret kamu. Simpan di `.env` yang sudah di-`.gitignore`.
+> ⚠️ **JANGAN commit .env ke Git.** File ini sudah di .gitignore.
 
 ---
 
 ## 📱 Menu Telegram
 
-Setelah bot jalan, kirim `/start` di Telegram. Menu utama:
+### Cara Kerja
 
-```
-┌─────────────────────────────────────────┐
-│ ⚡ Quick Actions  │  📈 Positions      │
-│ ⚙️ Strategi       │  📋 History        │
-│ 🚀 Start          │  🛑 Stop           │
-│ 💰 Balance        │  🧠 Smart Mode    │
-│ 📊 PnL Chart      │  🔗 Wallet         │
-│ 🎮 Mode           │  📐 Direction      │
-│ ❓ Help                                │
-└─────────────────────────────────────────┘
-```
+Semua interaksi via **InlineKeyboardMarkup** (tombol di dalam message). Tidak ada ReplyKeyboard.
 
-### Detail Menu
-
-| Button | Fungsi |
-|--------|--------|
-| **⚡ Quick Actions** | View Orders, Cancel All, Close All, Avg Entry, Scan Market |
-| **📈 Positions** | Lihat semua posisi terbuka |
-| **⚙️ Strategi** | Pilih strategi, adjust parameter |
-| **📋 History** | Riwayat trade terakhir |
-| **🚀 Start** | Aktifkan trading |
-| **🛑 Stop** | Hentikan trading |
-| **💰 Balance** | Lihat saldo account |
-| **🧠 Smart Mode** | Auto switch strategi terbaik berdasarkan performance |
-| **📊 PnL Chart** | Chart PnL (24h / 7d / 30d / All) |
-| **🔗 Wallet** | Connect ke exchange (Binance / Bybit / OKX) |
-| **🎮 Mode** | Switch Live / Dry Run |
-| **📐 Direction** | Set Long / Short / Both |
-| **❓ Help** | Panduan penggunaan |
+Format callback: `prefix:action:value`
+- `page:XXX` — navigasi halaman
+- `set:XXX` — ubah settings
+- `action:XXX` — eksekusi trading
+- `strat:XXX` — manajemen strategi
 
 ---
 
-## 📊 Strategi
+### Halaman Menu
 
-11 strategi tersedia. Semua menggunakan prinsip: **TP kecil tapi sering, bukan TP besar yang jarang tercapai.**
+#### 🏠 Main Page
+```
+Trador v2
+[Status] [Strategy] [Quick]
+[Balance] [Monitor] [Settings]
+[Help]
+```
+Akses semua halaman. Status hijau = bot hidup.
 
-### Prinsip Trading
+#### 📊 Status Page
+- Mode (dry_run / live)
+- Balance saat ini + PnL
+- Open positions count
+- Win rate 24h (dari trade_log, bukan perf tracker)
+- Strategi aktif + jumlah
+- Wallet connected / disconnected
 
-```
-❌ GREEDY TP
-├── TP 100% → jarang tercapai
-├── Akhirnya kena SL
-└── 1 trade = wipe out
+#### 💰 Balance Page
+- **Dry Run**: Balance simulasi, reset ke $100
+- **Live**: Balance dari wallet exchange (sync otomatis)
+- PnL since start, PnL 24h
 
-✅ CONSISTENT TP  
-├── TP 10-15%
-├── High frequency trading
-├── Compounding
-└── 1000x small wins > 1 big loss
-```
+#### 📋 Positions Page
+- Semua posisi terbuka (symbol, direction, size, entry, PnL, TP/SL)
+- Tombol close per posisi
 
-### Leverage Math
+#### 📜 History Page
+- Log trade dengan pagination (5 per halaman)
+- Filter: ALL / DRY RUN / LIVE
+- Hapus history: 7 days / 30 days / ALL
 
-```
-Dengan leverage, SL/TP dalam % adalah % HARGA, bukan % MARGIN.
- 
-Contoh: BTC $100,000, leverage 10x, entry LONG
-- Harga turun 0.5% → $99,500
-- Loss = 0.5% × 10 = 5% dari margin
+#### ⚙️ Strategy Page
+- 11 strategi — tap untuk toggle ON/OFF
+- Default: semua ON
+- Indikator ✅ = aktif
 
-Jadi:
-- SL -1% di price = -10% margin (10x leverage) — TOO TIGHT
-- SL -2% di price = -20% margin — LANGSUNG WIPED
-- Max margin loss yang aman: 15-20%
-- SL = Max_margin_loss / Leverage
-```
+#### 📡 Monitor Page
+- Status scanner (whale, liquidation, orderbook, volume_profile, funding, smc)
+- Strategi yang aktif (dari StrategyLoader)
+- Cycle interval + last scan time
 
-### Daftar Strategi
+#### 🔧 Settings Page
 
-#### 1. Scalp Rapid ⚡⚡⚡
-```
-TP: 2% (price) | SL: 1.5% (price) | Leverage: 10x
-Signal: EMA9/21 crossover + RSI + Volume spike
-Frequency: SANGAT TINGGI — scalping cepat
-Max hold: 5 menit
-```
+| Parameter | Deskripsi | Default |
+|-----------|-----------|---------|
+| LLM Smart | Position sizing via Hermes LLM | OFF |
+| Cycle Interval | Detik antar scan cycle | 15s |
+| Max Orders/Cycle | Maksimal order per cycle | 2 |
+| Max Positions | Total posisi aktif bersamaan | 5 |
+| Daily Loss Limit | Maksimal loss per hari ($) | $50 |
+| Symbol Pool | Coin yang di-scan | 30 coins |
 
-#### 2. Liquidation Hunter ⚡⚡⚡⚡
-```
-TP: 2% (price) | SL: 1.5% (price) | Leverage: 10x
-Signal: Liquidation cascade dari Binance WebSocket
-Frequency: SANGAT TINGGI
-Entry: Setelah liquidation wave terdeteksi
-- Short cascade (BUY liquidations) → go LONG
-- Long cascade (SELL liquidations) → go SHORT
-Max hold: 3 menit
-```
+##### 🪙 Symbol Pool (Coin Filter)
+- Tap `🪙 Coins` → halaman coin pool
+- **A-Z Letter Filter**: tap huruf untuk filter coin berdasarkan huruf awal
+- **Tap coin** untuk toggle enable/disable
+- Data coin: real dari Binance Futures (top 50 USDT pairs by volume)
+- Fallback ke 30 coin static jika API gagal
 
-#### 3. Momentum EMA ⚡⚡
-```
-TP: 3% (price) | SL: 2% (price) | Leverage: 5x
-Signal: EMA20/50 crossover + ADX filter + RSI
-Frequency: TINGGI
-Max hold: 15 menit
-```
+#### 👛 Wallet Page
+- Pilih exchange: Binance Futures / Hyperliquid
+- Input API Key + Secret
+- Test connection → konfirmasi "✅ Connected" atau "❌ Failed"
 
-#### 4. Grid Hunter ⚡⚡
-```
-TP: 2% (price) | SL: 1.5% (price) | Leverage: 5x
-Signal: Bollinger Bands range bound
-Frequency: TINGGI — buy low sell high di range
-Cocok: Market sideways
-Max hold: 15 menit
-```
+#### 🔴 Mode Page
+- **Dry Run**: Simulasi, tidak perlu API key (bisa test tanpa risiko)
+- **Live**: Real trading, butuh wallet connected + API keys
 
-#### 5. Breakout Pro ⚡⚡
-```
-TP: 4% (price) | SL: 2% (price) | Leverage: 5x
-Signal: Breakout consolidation + volume confirmation
-Frequency: SEDANG
-Max hold: 20 menit
-```
+---
 
-#### 6. Swing Stealth ⚡
-```
-TP: 5% (price) | SL: 3% (price) | Leverage: 3x
-Signal: EMA50/200 trend following + ADX
-Frequency: RENDAH — swing trade
-Max hold: 2 jam
-```
+## 📈 Strategi
 
-#### 7. Order Block Hunter (SMC) ⚡⚡
-```
-TP: 4% (price) | SL: 2% (price) | Leverage: 5x
-Signal: Order Block reclaim (institutional zones)
-Source: Smart Money Concepts
-Frequency: SEDANG
-Max hold: 30 menit
-```
+Default: semua 11 strategi **AKTIF**.
 
-#### 8. FVG Catcher (SMC) ⚡⚡⚡
-```
-TP: 3% (price) | SL: 1.5% (price) | Leverage: 8x
-Signal: Fair Value Gap fill
-Source: Smart Money Concepts — 3-candle imbalance
-Frequency: TINGGI
-Max hold: 10 menit
-```
-
-#### 9. Liquidity Sweep (SMC) ⚡⚡⚡
-```
-TP: 2.5% (price) | SL: 1% (price) | Leverage: 10x
-Signal: Liquidity sweep reversal (stop hunt)
-Source: Smart Money Concepts
-Frequency: TINGGI — reversal after stop hunt
-Max hold: 5 menit
-```
-
-#### 10. Funding Arbitrage 💰
-```
-TP: 2% (price) | SL: 4% (price) | Leverage: 3x
-Signal: Funding rate edge
-Source: Binance funding rate monitoring
-Entry: Lawan arah funding rate tinggi
-Max hold: 8 jam
-Target: Collect funding payments
-```
-
-#### 11. Whale Rider 🐋
-```
-TP: 2.5% (price) | SL: 1% (price) | Leverage: 10x
-Signal: Whale activity (large trades > $50K)
-Source: DexScreener + Binance WS
-Frequency: TINGGI
-Max hold: 5 menit
-```
-
-### Setup Strategy via Telegram
-
-```
-⚙️ Strategi → Pilih strategi → Inline keyboard:
-├── ✅ Active (aktifkan)
-├── 📝 Parameters (adjust SL/TP/lev)
-├── 📈 Performance (win rate, avg PnL)
-└── 🧠 Smart Select (Hermes pilih terbaik)
-```
+| ID | Nama | Deskripsi Singkat |
+|----|------|-------------------|
+| `whale_rider` | Whale Rider | Riding large wallet orders via funding rate anomalies |
+| `funding_arbitrage` | Funding Arbitrage | Long/short funding rate spread capture |
+| `grid_hunter` | Grid Hunter | Grid orders di sideways market |
+| `scalp_rapid` | Scalp Rapid | Quick scalp di high-volume spikes |
+| `swing_stealth` | Swing Stealth | Swing trade dengan stealth orders |
+| `breakout_pro` | Breakout Pro | Breakout dari range/S&D zones |
+| `fvg_catcher` | FVG Catcher | Fair Value Gap reversal detection |
+| `liquidation_hunter` | Liquidation Hunter | Order book liquidity hunting |
+| `orderblock_hunter` | Order Block Hunter | Order block detection + trade |
+| `liquidity_sweep` | Liquidity Sweep | Liquidity pools sweep exploitation |
+| `momentum_ema` | Momentum EMA Crossover | EMA crossover untuk momentum entry |
 
 ---
 
 ## 🔍 Scanners
 
-6 scanner market real-time. Semua **GRATIS, no API key** (kecuali kalau butuh private data).
+6 scanner berjalan parallel di setiap cycle:
 
-### 1. Liquidation Scanner 🔥
-```
-Source: wss://fstream.binance.com/stream?streams=<symbol>@forceOrder
-Data: Real-time forced liquidations (no API key)
-Logic: Group liquidation events into price clusters
-Signal: Cluster > $50K = potential cascade
-Update: Real-time
-```
+| Scanner | Data Source | Fungsi |
+|---------|-------------|--------|
+| `whale` | Public Binance OHLCV | Detect whale activity |
+| `liquidation` | Public Binance orderbook | Liquidated positions |
+| `orderbook` | Public Binance depth | Order book imbalance |
+| `volume_profile` | Public Binance klines | Volume profile analysis |
+| `funding` | Public Binance funding rate | Funding rate anomalies |
+| `smc` | Public Binance OHLCV + orderbook | Smart Money Concept signals |
 
-### 2. Orderbook / Wall Scanner 📊
-```
-Source: wss://fstream.binance.com/stream?streams=<symbol>@depth20@100ms
-Data: Orderbook depth 20 levels, 100ms update
-Logic: Wall = level > 5x rolling average size
-Signal: Large wall appear/disappear
-Update: 100ms (very fast)
-```
+> Semua scanner menggunakan **public API** — tidak butuh API key.
 
-### 3. Whale Scanner 🐋
-```
-Source: 
-  - Binance WS: <symbol>@trade (large trades > $50K)
-  - DexScreener API: https://api.dexscreener.com/dex/v1/trades
-Data: Large trades di Solana + Binance futures
-Logic: Cluster whale trades by symbol/side
-Signal: Cluster confirmed = follow whale direction
-Update: Real-time + 10s polling DexScreener
-```
+---
 
-### 4. Funding Rate Scanner 💰
+## 🔄 Mode Trading
+
+### Dry Run (Simulasi)
+- Balance simulated: $100 default
+- Tidak ada order real
+- Cocok untuk testing strategi
+
+### Live (Real)
+- Balance dari wallet exchange (Binance Futures / Hyperliquid)
+- Order real被执行
+- ⚠️ Risk: real money involved
+
+---
+
+## 👛 Wallet Connect
+
+### Binance Futures
 ```
-Source:
-  - REST: https://fapi.binance.com/fapi/v1/premiumIndex
-  - WS: wss://fstream.binance.com/stream?streams=!premiumIndex@arr
-Data: Funding rate per symbol, 8h interval
-Logic: Funding rate > threshold = edge opportunity
-Signal: High funding = trade opposite direction
-Update: Real-time via WebSocket
+1. Buka Binance → API Management
+2. Buat API Key (Futures enabled)
+3. Input Key + Secret di Wallet page
+4. Test Connection
 ```
 
-### 5. Volume Profile Scanner 📈
+### Hyperliquid
 ```
-Source: https://api.binance.com/api/v3/klines (REST, no API key)
-Data: OHLCV candles
-Logic:
-  - POC (Point of Control): Price level dengan volume tertinggi
-  - VAH (Value Area High): Batas atas 70% volume
-  - VAL (Value Area Low): Batas bawah 70% volume
-Signal: Price return ke POC = high probability entry
-Update: Per request (on-demand)
+1. Buka Hyperliquid → API
+2. Buat API Key
+3. Input Key + Secret (no wallet address needed)
+4. Test Connection
 ```
 
-### 6. SMC Scanner 🎯
+> Hyperliquid **tidak butuh wallet address** — hanya API key + secret.
+
+---
+
+## 🤖 Smart Mode
+
+Smart Mode = Hermes Agent sebagai **passive controller**.
+
+**Arsitektur:**
 ```
-Source: https://api.binance.com/api/v3/klines (REST, no API key)
-Data: OHLCV candles 15m/1h
-Features:
-  - Order Blocks: Institutional zones dari candle bodies/wicks
-  - Fair Value Gaps: 3-candle imbalance
-  - Liquidity Sweeps: Stop hunt detection (price sweeps high/low)
-  - Market Structure: Swing highs/lows, BOS (Break of Structure)
-  - BTC Master Filter: Block trades vs BTC trend
-Signal: confluence 3+ factors
-Update: Per request (on-demand)
+Hermes (CONTROLLER) ←→ JSON files ←→ Trador (BODY/executor)
+```
+
+**Alur:**
+1. Trador selesai trade → write report JSON
+2. Hermes baca report → analisis → write suggestions JSON
+3. Trador baca suggestions → adjust params (jika有必要)
+
+**Yang TIDAK dilakukan Hermes:**
+- ❌ Touch execution langsung
+- ❌ Buka/tutup posisi
+- ❌ Ganti strategy files
+
+**Yang DILAKUKAN Hermes:**
+- ✅ Analisa trade reports
+- ✅ Suggest position size adjustments
+- ✅ Identify market regime patterns
+- ✅ Recommend strategy参数
+
+---
+
+## 📊 Backtesting
+
+```bash
+cd src
+python3 -m backtesting.run
+```
+
+**Output:**
+- Equity curve chart (PNG)
+- Trade markers di chart
+- Drawdown fill
+- Sharpe Ratio, Sortino Ratio, Max Drawdown
+
+**Contoh:**
+```bash
+python3 -m backtesting.run --strategy whale_rider --symbol BTCUSDT --interval 1h --days 30
 ```
 
 ---
 
-## 🎮 Mode Trading
+## ❓ FAQ
 
-### Live Mode 🔴
-- Real money trading
-- Butuh wallet connect ke exchange
-- Semua order menggunakan dana nyata
+### Q: Apakah 11 strategi bisa dipakai gratis?
+**A:** Ya. Semua strategi menggunakan **public Binance API** (`fapi.binance.com`). Tidak butuh API key untuk scanner/strategi. API key hanya diperlukan untuk **Live trading** (buka posisi real).
 
-### Dry Run Mode 🟡
-- Simulasi trading
-- Tidak butuh wallet connect
-- Aman untuk testing strategi
+### Q: max_orders_per_cycle vs max_concurrent_positions bedanya?
+**A:**
+- `max_orders_per_cycle` = berapa kali bot boleh **buka posisi baru** tiap cycle scan
+- `max_concurrent_positions` = total **posisi aktif bersamaan** (belum ditutup/TP/SL)
 
-### Switch Mode via Telegram
+Contoh: max_orders=2, max_pos=5
+→ Tiap 15 detik, bot boleh buka max 2 posisi baru
+→ Total tidak boleh lebih dari 5 posisi aktif
 
+### Q: Cycle interval itu apa?
+**A:** Detik antar scan cycle. Default 15s.
+
+**Cycle flow:**
 ```
-🎮 Mode → Pilih:
-├── 🔴 LIVE
-└── 🟡 DRY RUN
-
-Konfirmasi:
-"Switch ke LIVE mode? Pastikan wallet sudah connect."
-[✅ Ya, switch] [❌ Batal]
+1. Fetch price semua coin di pool
+2. Jalankan 11 strategi → score per coin
+3. Top score + filter risk → buka posisi
+4. Check TP/SL semua posisi terbuka
+5. Sleep cycle_interval
 ```
+
+Semakin kecil interval = semakin responsif tapi **lebih banyak API calls**.
+
+### Q: Symbol pool itu apa?
+**A:** Daftar coin yang di-scan tiap cycle. Default 30 coins dari Binance Futures top volume.
+
+- Tap `🪙 Coins` di Settings untuk customize
+- Filter huruf A-Z untuk find coin spesifik
+- ✅ = enabled (di-scan), ❌ = disabled
+
+### Q: Kenapa Status menunjukkan 0% Win Rate padahal sudah profit?
+**A:** Win Rate dihitung langsung dari `trade_log.json` (semua trade records). Jika kosong atau tidak ada trade, Win Rate = 0%. Bukan dari `performance.json` yang tidak pernah di-update.
+
+### Q: Bagaimana cara reset dry run balance?
+**A:** Balance page → `🔄 Reset Dry Run → $100`
+
+### Q: Live balance tidak sync?
+**A:** Pastikan wallet sudah connected (Wallet page → Test Connection). Live balance diambil langsung dari exchange API, bukan dari input manual.
+
+### Q: Bot tidak response saat diklik?
+**A:** 
+1. Cek bot alive: `pgrep -f "python3 -m src.main"`
+2. Restart: `pkill -f "python3 -m src.main" && python3 -m src.main`
+3. Cek logs: `tail -20 logs/trador.log`
+
+### Q: Hyperliquid butuh wallet address?
+**A:** Tidak. Hyperliquid hanya butuh **API Key + Secret**. Tidak ada wallet address atau seed phrase.
+
+### Q: Daily loss limit dalam apa?
+**A:** Dalam **dollar ($)** — bukan persen. Default $50/hari. Jika total PnL negatif mencapai -$50, bot akan stop trading sampai hari berikutnya.
+
+### Q: Bagaimana cara hapus semua history?
+**A:** History page → 🔽 Filter → Pilih **ALL** → 🗑️ Delete → Pilih rentang (7 days / 30 days / ALL data)
 
 ---
 
-## 📐 Direction
+## 🔧 Troubleshooting
 
-Atur arah trading:
+### Bot tidak started
+```bash
+# Cek process
+pgrep -f "python3 -m src.main"
 
-| Direction | Fungsi |
-|-----------|--------|
-| **📈 LONG** | Profit saat harga naik |
-| **📉 SHORT** | Profit saat harga turun |
-| **🔄 BOTH** |双向 — profit kedua arah (recommended) |
+# Cek logs
+tail -20 logs/trador.log
 
-```
-📐 Direction → Pilih:
-├── 📈 LONG
-├── 📉 SHORT
-└── 🔄 BOTH
+# Restart
+pkill -f "python3 -m src.main"
+python3 -m src.main
 ```
 
-> 💡 **Rekomendasi: BOTH.** Future trading bisa profit naik DAN turun. Yang penting analisa + strategi, bukan arah market.
+### "Message is not modified" di logs
+Normal — bot mencoba render halaman yang isinya sama persis. Sudah di-handle gracefully, tidak mempengaruhi fungsi.
 
----
+### Wallet connection failed
+1. Cek API Key + Secret benar
+2. Pastikan Futures enabled untuk Binance
+3. Hyperliquid: hanya API Key + Secret, tidak perlu wallet address
+4. Cek network connectivity dari server
 
-## 🔗 Wallet Connect
+### Balance tidak update di Live mode
+- Pastikan wallet connected (Wallet page)
+- Balance sync dari exchange API setiap kali halaman dibuka
+- Refresh dengan klik Balance di menu
 
-Connect ke exchange untuk Live Mode:
+### Strategi tidak sync dengan yang dicentang
+- Status page membaca dari `StrategyLoader.list_active_ids()` — source of truth
+- Monitor page juga membaca dari StrategyLoader
+- Jika tidak sync, restart bot: `pkill -f "python3 -m src.main" && python3 -m src.main`
 
-```
-🔗 Wallet → Pilih Exchange:
-├── 🟣 Binance Futures
-├── 🔵 Bybit Unified
-└── 🟠 OKX
+### Scanner tidak jalan
+- Scanner berjalan otomatis saat trading enabled
+- Cek Monitor page untuk status scanner
+- Semua scanner menggunakan public API — tidak butuh API key
 
-→ Masukkan API Key + Secret
-→ Test connection
-→ Show balance
-→ Wallet connected ✅
-```
+### API rate limit
+- Default cycle 15s — sudah aman untuk Binance public API
+- Jika limit tercapai, bot会自动 backoff
+- Hyperliquid: lebih toleran untuk rate limit
 
-**Data yang dibutuhkan:**
-- Binance: `BINANCE_API_KEY` + `BINANCE_API_SECRET`
-- Bybit: `BYBIT_API_KEY` + `BYBIT_API_SECRET`
-- OKX: `OKX_API_KEY` + `OKX_API_SECRET` + Passphrase
-
-**Yang TIDAK dibutuhkan:**
-- Seed phrase (itu untuk DeFi/MetaMask, bukan CEX)
-- Withdrawal permission (cukup trading permission)
-
----
-
-## 📈 PnL Chart
-
-Visualisasi performance:
-
-```
-📊 PnL Chart → Pilih Periode:
-├── ⏱️ 24 Jam
-├── 📅 7 Hari
-├── 🗓️ 30 Hari
-├── ♾️  Semua
-└── 📋 Text Summary
-
-Chart: Dark-themed line chart
-- Cumulative PnL over time
-- Win/lose color green/red
-- Shows: Mode, Direction, Strategy, Final PnL
-```
-
-Text Summary juga tersedia:
-- Total trades
-- Win rate
-- Wins / Losses count
-- Total PnL
-- Recent 5 trades
-
----
-
-## 🧠 Smart Mode
-
-Mode otomatis — bot switch ke strategi terbaik berdasarkan performance:
-
-```
-🧠 Smart Mode → Panel:
-├── 🤖 Auto Trading: ON/OFF
-├── 🧠 Hermes Passive: ON/OFF
-├── 📈 Best Strategy: [strategy_name]
-├── 🔄 Force Scan
-├── 🧪 Simulate Signal
-└── 📊 Performance Dashboard
-```
-
-**Auto Trading ON:** Bot auto switch strategi terbaik tanpa konfirmasi.
-
-**Hermes Passive ON:** Hermes hanya scoring, tidak auto-apply suggestions.
-
----
-
-## ⚡ Quick Actions
-
-Aksi cepat tanpa masuk menu:
-
-```
-⚡ Quick Actions → Pilih:
-├── 📋 View Orders
-├── 🗑️ Cancel All (konfirmasi)
-├── 🔻 Close All (konfirmasi)
-├── 📊 Avg Entry
-└── 🔍 Scan Market
-```
-
-**Cancel All:** Batalkan semua open orders. Konfirmasi diperlukan.
-
-**Close All:** Tutup semua posisi. Konfirmasi diperlukan.
-
----
-
-## 🤖 Hermes Integration
-
-Trador dan Hermes berkomunikasi via file-based JSON.
-
-### Trador → Hermes (Reports)
-
-```
-shared/trador_reports/
-├── status.json       # Current state (every 30s)
-├── trades.json       # Trade results (after each trade)
-├── metrics.json      # Performance metrics (hourly)
-└── alerts.json       # Error/warning alerts
-```
-
-### Hermes → Trador (Suggestions)
-
-```
-shared/hermes_suggestions/
-├── pending/          # ← Hermes writes di sini
-│   └── suggestion_<timestamp>.json
-└── processed/        # → Trador move ke sini setelah diproses
-```
-
-### Suggestion Format
-
-```json
-{
-  "id": "sug_001",
-  "timestamp": 1750000000,
-  "type": "strategy_adjust",
-  "data": {
-    "strategy_id": "scalp_rapid",
-    "changes": {
-      "risk.sl_percent": -1.0,
-      "risk.tp_percent": 2.5
-    },
-    "reason": "Win rate menurun 10% dalam 1 jam terakhir"
-  }
-}
-```
-
-### Trador Hard Limits
-
-Trador **MENOLAK** suggestion kalau:
-
-1. **Expired** — suggestion older than 5 minutes
-2. **Cooling off** — another suggestion for same strategy < 10 min ago
-3. **Risk violation:**
-   - `leverage > 20`
-   - `sl_percent > 5` (price terms)
-   - `size_value > 20%` of balance
-   - `max_open > 5`
-
----
-
-## 🔀 Role Separation
-
-**PRINSIP UTAMA:**
-
-```
-Hermes = CONTROLLER (strategy)
-Trador = EXECUTOR (execution)
-LLM    = SCORER (execution quality only)
-```
-
-| Siapa | Fungsi | BISA apa | TIDAK BISA apa |
-|-------|--------|----------|----------------|
-| **Hermes** | Analisa, strategi | Baca reports, ubah strategy JSON | Eksekusi trade, akses exchange |
-| **Trador** | Eksekusi | Trade sesuai strategy, enforce limits | Ubah strategy sendiri |
-| **LLM** | Scoring | Score execution quality | Ubah strategi |
-
-**Memory Separation:**
-
-```
-Hermes memory ← tidak pernah menyentuh memory Trador
-Trador memory ← tidak pernah dibaca Hermes
-Komunikasi ← hanya via shared/ folder (JSON files only)
-```
-
-**Kenapa pisah?**
-
-```
-Kalau Hermes error → Trador tetap jalan
-Kalau Trador error → Hermes tetap bisa analisa
-Tidak ada single point of failure
-```
+### Coin pool hanya show A-I
+- Pastikan halaman coin pool di-render dengan benar
+- Huruf di-split jadi 4 rows (A-G, H-N, O-U, V-Z)
+- Jika ada letter tanpa coin, tampil sebagai `·` (disabled)
 
 ---
 
@@ -618,190 +448,82 @@ Tidak ada single point of failure
 
 ```
 trador/
-├── .env                        # API keys, tokens
-├── .env.example                # Template
-├── README.md                   # Dokumen ini
-├── SPEC.md                     # Technical specification
-├── requirements.txt            # Python dependencies
-│
+├── .env                  # Credentials (JANGAN commit!)
+├── .env.example          # Template
+├── requirements.txt
+├── README.md
+├── SPEC.md
 ├── src/
-│   ├── main.py                # Entry point
-│   │
-│   ├── tg_bot/                # Telegram bot
-│   │   ├── keyboards.py       # Reply/Inline keyboards
-│   │   └── handlers/
-│   │       ├── menu.py        # Status, balance, help
-│   │       ├── positions.py    # View positions
-│   │       ├── trades.py       # Trade history
-│   │       ├── strategy.py     # Strategy management
-│   │       ├── smart_mode.py   # Smart Mode panel
-│   │       ├── quick_actions.py # Quick actions
-│   │       ├── wallet.py       # Wallet/mode/direction
-│   │       ├── pnl.py          # PnL chart
-│   │       └── pnl_chart.py    # Chart generator
-│   │
-│   ├── trading/               # Trading engine
-│   │   ├── engine.py         # ccxt wrapper
-│   │   ├── signals.py        # Signal generation
-│   │   └── position_manager.py # Position tracking
-│   │
-│   ├── scanners/              # Market data scanners
-│   │   ├── liquidation_scanner.py   # Liquidation WS
-│   │   ├── orderbook_scanner.py     # Orderbook walls
-│   │   ├── whale_scanner.py          # Whale trades
-│   │   ├── funding_scanner.py        # Funding rate
-│   │   ├── volume_profile_scanner.py # POC/VAH/VAL
-│   │   └── smc_scanner.py            # SMC indicators
-│   │
-│   ├── strategy/              # Strategy management
-│   │   ├── loader.py         # Load strategy JSONs
-│   │   ├── validator.py      # Validate strategy config
-│   │   └── watcher.py        # Hot-reload on file change
-│   │
-│   ├── memory/                # Trador's memory
-│   │   ├── state.py          # State manager
-│   │   ├── trade_log.py      # Trade history
-│   │   └── performance.py    # Performance metrics
-│   │
-│   ├── comm/                  # Hermes communication
-│   │   ├── reporter.py       # Write reports → Hermes
-│   │   └── reader.py        # Read suggestions ← Hermes
-│   │
-│   ├── llm/                  # LLM scorer
-│   │   └── scorer.py        # Score execution quality
-│   │
+│   ├── main.py           # Entry point
+│   ├── trading/
+│   │   ├── engine.py     # Core trading engine
+│   │   └── auto_trader.py # 11-strategy auto trader
+│   ├── scanners/
+│   │   ├── whale_scanner.py
+│   │   ├── liquidation_scanner.py
+│   │   ├── orderbook_scanner.py
+│   │   ├── volume_profile_scanner.py
+│   │   ├── funding_scanner.py
+│   │   └── smc_scanner.py
+│   ├── strategy/
+│   │   ├── loader.py     # StrategyLoader — hot-reload
+│   │   └── *.yaml        # Strategy configs
+│   ├── tg_bot/
+│   │   ├── menu/
+│   │   │   ├── __init__.py      # MenuRouter + handlers
+│   │   │   ├── core.py          # MenuPage + MenuNavigator
+│   │   │   └── pages/
+│   │   │       ├── main_page.py
+│   │   │       ├── status_page.py
+│   │   │       ├── balance_page.py
+│   │   │       ├── positions_page.py
+│   │   │       ├── history_page.py
+│   │   │       ├── strategy_page.py
+│   │   │       ├── monitor_page.py
+│   │   │       ├── settings_page.py
+│   │   │       ├── wallet_page.py
+│   │   │       ├── mode_page.py
+│   │   │       ├── smart_page.py
+│   │   │       ├── quick_page.py
+│   │   │       └── help_page.py
+│   │   └── handlers/     # Legacy handlers (deprecated)
+│   ├── memory/
+│   │   ├── state.py      # StateManager
+│   │   ├── trade_log.py  # TradeLog
+│   │   └── performance.py # PerformanceTracker
+│   ├── llm/
+│   │   └── scorer.py     # LLM scoring
+│   ├── backtesting/
+│   │   └── run.py        # Backtesting CLI
 │   └── utils/
-│       ├── logger.py         # Logging
-│       └── helpers.py        # Helpers
-│
-├── strategies/                # Strategy JSON files
-│   ├── scalp_rapid.json
-│   ├── liquidation_hunter.json
-│   ├── momentum_ema.json
-│   ├── grid_hunter.json
-│   ├── breakout_pro.json
-│   ├── swing_stealth.json
-│   ├── orderblock_hunter.json
-│   ├── fvg_catcher.json
-│   ├── liquidity_sweep.json
-│   ├── funding_arbitrage.json
-│   └── whale_rider.json
-│
-├── shared/                    # Hermes communication (file-based)
-│   ├── trador_reports/       # → Hermes reads
-│   └── hermes_suggestions/   # ← Hermes writes
-│
-├── memory/                    # Trador persistent memory
-│   ├── state.json            # Current state
-│   ├── trades.json           # Trade history
-│   └── performance.json      # Metrics
-│
-└── logs/                      # Log files
+│       └── logger.py
+├── memory/               # Runtime data
+│   ├── state.json
+│   ├── trade_history.json
+│   ├── performance.json
+│   ├── dry_run/
+│   └── live/
+├── strategies/           # Strategy YAML files
+│   ├── whale_rider.yaml
+│   └── ...
+└── logs/
     └── trador.log
 ```
 
 ---
 
-## 🌐 API Endpoints
+## 📌 Commands
 
-### Binance Futures (Public — No API Key)
-
-| Endpoint | Method | Fungsi |
-|----------|--------|--------|
-| `/fapi/v1/klines` | GET | OHLCV candles |
-| `/fapi/v1/premiumIndex` | GET | Funding rate |
-| `/fapi/v1/forceOrder` | GET | Recent liquidations |
-| `/fapi/v1/openInterest` | GET | Open interest |
-
-### Binance Futures (Requires API Key)
-
-| Endpoint | Method | Fungsi |
-|----------|--------|--------|
-| `/fapi/v1/account` | GET | Account info |
-| `/fapi/v1/positionRisk` | GET | Position info |
-| `/fapi/v1/order` | POST | Place order |
-| `/fapi/v1/order` | DELETE | Cancel order |
-
-### WebSocket Streams (Public)
-
-| Stream | URL | Fungsi |
-|--------|-----|--------|
-| Trade | `wss://fstream.binance.com/stream?streams=<sym>@trade` | Real-time trades |
-| Force Order | `wss://fstream.binance.com/stream?streams=<sym>@forceOrder` | Liquidations |
-| Depth | `wss://fstream.binance.com/stream?streams=<sym>@depth20@100ms` | Orderbook |
-| Premium Index | `wss://fstream.binance.com/stream?streams=!premiumIndex@arr` | All funding rates |
-
-### External APIs (Free)
-
-| API | URL | Fungsi |
-|-----|-----|--------|
-| DexScreener | `https://api.dexscreener.com/dex/v1/trades` | Whale trades (Solana) |
+| Command | Fungsi |
+|---------|--------|
+| `/start` | Start bot, show main menu |
+| `/stop` | Stop trading |
+| `/newdryrun [balance]` | Start dry run dengan balance tertentu |
+| `/status` | Show quick status |
+| `/balance` | Show balance page |
+| `/help` | Show help |
 
 ---
 
-## 🔧 Troubleshooting
-
-### Bot tidak merespond
-
-```bash
-# Check bot token
-cat .env | grep TELEGRAM_BOT_TOKEN
-
-# Check bot logs
-tail -f logs/trador.log
-
-# Restart bot
-python src/main.py
-```
-
-### API Key error
-
-```bash
-# Verify API key
-python -c "import ccxt; e=ccxt.binance({'apiKey':'KEY','secret':'SECRET'}); print(e.fetch_balance())"
-```
-
-### WebSocket disconnect
-
-Scanner auto-reconnect setiap 5 detik. Kalau sering disconnect:
-- Check internet stability
-- Kurangi jumlah symbol yang di-monitor
-- Check firewall tidak blokir port 443
-
-### Position tidak terbuka
-
-```bash
-# Check leverage setting
-# Verify margin cukup
-# Check SL/TP tidak terlalu ketat
-# Verify dry run vs live mode
-```
-
-### Hermes suggestions tidak diproses
-
-```bash
-# Check file permissions
-ls -la shared/hermes_suggestions/pending/
-
-# Check suggestion format
-cat shared/hermes_suggestions/pending/*.json | python -m json.tool
-```
-
----
-
-## 📜 Lisensi
-
-MIT License. Use at your own risk. Trading crypto futures involves substantial risk of loss.
-
----
-
-## ⚠️ Disclaimer
-
-Ini adalah software experimental. Gunakan dengan bijak.
-
-- **Backtest dulu** sebelum live trading
-- **Mulai dengan nominal kecil**
-- **Pahami risk management**
-- **Jangan trade dengan uang yang kamu tidak mampu kehilangan**
-
-作者: Trador — crypto futures trading bot
+**Last updated:** June 2026
+**Version:** v2 (inline keyboard menu system)
