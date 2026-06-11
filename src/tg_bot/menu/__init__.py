@@ -1724,10 +1724,10 @@ async def _handle_dir_callback(update, _, state_mgr):
 
 
 # ── Text input handler (LLM key, balance fund amounts) ────────────────────────
-async def _handle_text_input(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Route free-text input to appropriate handler based on last markup."""
     text = update.message.text.strip()
-    router: MenuRouter = update._bot_data.get("menu_router")
+    router: MenuRouter = context._bot_data.get("menu_router")
     if not router:
         return
 

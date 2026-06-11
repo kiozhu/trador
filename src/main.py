@@ -142,6 +142,20 @@ class Trador:
             handler = text_buttons.get(text)
             if handler:
                 await handler(update, context)
+                return
+
+            # ── No button match — check if there's a pending input ───────────
+            # Route to menu router's _handle_text_input for API keys, model names, etc.
+            router = context._bot_data.get("menu_router")
+            if router:
+                state = router.state_mgr.get()
+                pending = state.get("pending_input", "")
+                if pending:
+                    from .tg_bot.menu import _handle_text_input
+                    await _handle_text_input(update, context)
+                    return
+
+            # No handler, no pending input — do nothing (absorb the message)
 
         self.app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_buttons)
