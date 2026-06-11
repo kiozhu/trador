@@ -1,7 +1,7 @@
 """Risk page — shows risk engine state, kill/resume, stress test."""
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from ..core import MenuPage, make_back_button
+from ..core import MenuPage
 
 
 class RiskPage(MenuPage):
@@ -30,70 +30,88 @@ class RiskPage(MenuPage):
         consec_loss = state.get("risk_consecutive_losses", 0)
         kill_reason = state.get("risk_killswitch_reason", "")
 
-        # Regime emoji
-        regime_map = {"bullish": "📈 Bullish", "bearish": "📉 Bearish", "sideway": "↔️ Sideway"}
+        # ── Regime ───────────────────────────────────────────────────────
+        regime_map = {
+            "bullish": "📈 Bullish",
+            "bearish": "📉 Bearish",
+            "sideway": "↔️ Sideway",
+        }
         regime_label = regime_map.get(regime, f"❓ {regime}")
 
-        # Trading status
+        # ── Trading status ───────────────────────────────────────────────
         if trading_enabled:
             status_icon = "🟢 AKTIF"
-            status_text = "Trading enabled — risk engine normal"
+            status_text = "Risk engine normal — trading aktif"
         else:
             status_icon = "🔴 MATI"
-            status_text = f"Trading disabled — {kill_reason or 'killswitch active'}"
+            status_text = f"Trading dihentikan — {kill_reason or 'killswitch aktif'}"
 
-        # VaR display
+        # ── VaR display ──────────────────────────────────────────────────
         var_1d_str = f"${var_1d:,.2f}" if var_1d else "$—"
         cvar_1d_str = f"${cvar_1d:,.2f}" if cvar_1d else "$—"
         var_7d_str = f"${var_7d:,.2f}" if var_7d else "$—"
         cvar_7d_str = f"${cvar_7d:,.2f}" if cvar_7d else "$—"
 
-        # Daily PnL
+        # ── Daily PnL ───────────────────────────────────────────────────
         pnl_icon = "📈" if daily_pnl >= 0 else "📉"
         pnl_str = f"+${daily_pnl:,.2f}" if daily_pnl >= 0 else f"${daily_pnl:,.2f}"
         pnl_pct_str = f"+{daily_pnl_pct:.2f}%" if daily_pnl_pct >= 0 else f"{daily_pnl_pct:.2f}%"
 
-        text = (
-            f"*🛡️ RISK ENGINE*\\n\\n"
-            f"*Status:* {status_icon}\\n"
-            f"_{status_text}_\\n\\n"
-            f"*Regime:* {regime_label}\\n"
-            f"*Kelly:* `{kelly_pct:.1f}%`\\n"
-            f"*Open Positions:* `{open_pos}`\\n\\n"
-            f"*── 📊 Value at Risk ──*\\n"
-            f"  VaR 1d: `{var_1d_str}`\\n"
-            f"  CVaR 1d: `{cvar_1d_str}`\\n"
-            f"  VaR 7d: `{var_7d_str}`\\n"
-            f"  CVaR 7d: `{cvar_7d_str}`\\n\\n"
-            f"*── 💰 Daily PnL ──*\\n"
-            f"  {pnl_icon} `{pnl_str}` ({pnl_pct_str})\\n"
-            f"  Consecutive losses: `{consec_loss}`\\n"
-        )
+        # ── Build clean text (NO markdown — plain text only) ─────────────
+        lines = [
+            "🛡️ RISK ENGINE",
+            "",
+            f"Status    : {status_icon}",
+            f"          {status_text}",
+            "",
+            f"Regime    : {regime_label}",
+            f"Kelly     : {kelly_pct:.1f}%",
+            f"Open Pos  : {open_pos}",
+            "",
+            "── 📊 Value at Risk ──",
+            f"  VaR 1d  : {var_1d_str}",
+            f"  CVaR 1d : {cvar_1d_str}",
+            f"  VaR 7d  : {var_7d_str}",
+            f"  CVaR 7d : {cvar_7d_str}",
+            "",
+            "── 💰 Daily PnL ──",
+            f"  {pnl_icon} {pnl_str} ({pnl_pct_str})",
+            f"  Consecutive losses: {consec_loss}",
+        ]
+
+        text = "\n".join(lines)
 
         keyboard = []
 
         # Kill / Resume button
         if trading_enabled:
-            keyboard.append([InlineKeyboardButton("🔴 KILL — Stop Trading", callback_data="set:risk_kill")])
+            keyboard.append([
+                InlineKeyboardButton("🔴 KILL — Stop Trading", callback_data="set:risk_kill")
+            ])
         else:
-            keyboard.append([InlineKeyboardButton("🟢 RESUME — Enable Trading", callback_data="set:risk_resume")])
+            keyboard.append([
+                InlineKeyboardButton("🟢 RESUME — Enable Trading", callback_data="set:risk_resume")
+            ])
 
         # Stress test buttons
-        keyboard.append(
-            [InlineKeyboardButton("💥 Black Swan", callback_data="set:stress_black_swan")]
-        )
-        keyboard.append(
-            [InlineKeyboardButton("💥 Liquidation Cascade", callback_data="set:stress_liquidation_cascade")]
-        )
-        keyboard.append(
-            [InlineKeyboardButton("💥 Market Maker Withdrawal", callback_data="set:stress_market_maker_withdrawal")]
-        )
-        keyboard.append(
-            [InlineKeyboardButton("💥 Correlation Breakdown", callback_data="set:stress_correlation_breakdown")]
-        )
-        keyboard.append(
-            [InlineKeyboardButton("💥 Funding Spike", callback_data="set:stress_sudden_funding_spike")]
-        )
+        keyboard.append([
+            InlineKeyboardButton("💥 Black Swan", callback_data="set:stress_black_swan")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("💥 Liquidation Cascade", callback_data="set:stress_liquidation_cascade")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("💥 Market Maker Withdrawal", callback_data="set:stress_market_maker_withdrawal")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("💥 Correlation Breakdown", callback_data="set:stress_correlation_breakdown")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("💥 Funding Spike", callback_data="set:stress_sudden_funding_spike")
+        ])
 
-        keyboard.append([InlineKeyboardButton("◀️ Back", callback_data="page:main")])
+        keyboard.append([
+            InlineKeyboardButton("◀️ Back", callback_data="page:main")
+        ])
+
         return text, InlineKeyboardMarkup(keyboard)

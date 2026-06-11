@@ -52,7 +52,7 @@ class MenuRouter:
         try:
             await update.callback_query.answer(f"→ {page_key}", show_alert=False)
             await update.callback_query.edit_message_text(
-                text, parse_mode="Markdown", reply_markup=reply_markup)
+                text, parse_mode=None, reply_markup=reply_markup)
         except Exception as e:
             # Gracefully handle "Message is not modified" — happens when
             # re-rendering the same page content (e.g. tapping active filter)
@@ -107,7 +107,7 @@ class MenuRouter:
                         [InlineKeyboardButton("◀️ Batal", callback_data="page:main")],
                     ]
                     await query.answer("⚠️ Open positions detected", show_alert=False)
-                    await query.edit_message_text(text, parse_mode="Markdown",
+                    await query.edit_message_text(text, parse_mode=None,
                         reply_markup=InlineKeyboardMarkup(keyboard))
                 else:
                     # No open positions — stop immediately
@@ -165,7 +165,7 @@ class MenuRouter:
                     [InlineKeyboardButton("◀️ Batal", callback_data="page:main")],
                 ]
                 await query.answer("⚠️ Confirmation required", show_alert=False)
-                await query.edit_message_text(text, parse_mode="Markdown",
+                await query.edit_message_text(text, parse_mode=None,
                     reply_markup=InlineKeyboardMarkup(keyboard))
             else:
                 # Dry run: start immediately
@@ -200,7 +200,7 @@ class MenuRouter:
                     f"Selesaikan dulu: {', '.join(missing)}"
                 )
                 await query.answer("❌ Prerequisites not met", show_alert=True)
-                await query.edit_message_text(text, parse_mode="Markdown",
+                await query.edit_message_text(text, parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:mode")]]))
                 return
             self.state_mgr.set_mode("live")
@@ -278,7 +278,7 @@ class MenuRouter:
             from ..keyboards import strategy_detail_keyboard
             reply_markup = strategy_detail_keyboard(strategy_id, is_active)
             text = f"⚙️ *{strategy.get('name', strategy_id)}*\n\nPilih parameter:"
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         # strat_perf:id → show performance
@@ -288,7 +288,7 @@ class MenuRouter:
                 strategy = self.loader.get(strategy_id)
                 text = f"📊 *{strategy.get('name', strategy_id)}*\n\n_Coming soon: performance stats_"
                 await query.answer("Performance", show_alert=False)
-                await query.edit_message_text(text, parse_mode="Markdown")
+                await query.edit_message_text(text, parse_mode=None)
             return
 
         # strat_delete:id → confirm delete
@@ -297,7 +297,7 @@ class MenuRouter:
             from ..keyboards import confirm_cancel_keyboard
             reply_markup = confirm_cancel_keyboard()
             text = f"🗑 *Delete strategy?*\n\n`{strategy_id}`\n\nThis cannot be undone."
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         # strat_back → back to strategy list
@@ -330,7 +330,7 @@ class MenuRouter:
             from .pages import SettingsPage
             page = SettingsPage(self.state_mgr)
             text, reply_markup = page.build(sub_page="symbols")
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         # ── Settings: max orders cycle ──────────────────────────────────
@@ -424,7 +424,7 @@ class MenuRouter:
                 f"*📉 Daily Loss Limit*\n\n"
                 f"Saat ini: `$ {cur}`\n\n"
                 f"Pilih batas maksimal kerugian per hari:",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
@@ -486,7 +486,7 @@ class MenuRouter:
                 "• Hubungkan wallet via API key\n"
                 "• Balance auto-sync dari wallet kamu\n\n"
                 "_Deposit masuk ke Hyperliquid wallet._",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
@@ -533,7 +533,7 @@ class MenuRouter:
                 "• Pilih jaringan ERC-20\n"
                 "• Withdrawal fee: ~$0.10\n\n"
                 "_Ini mengurangi live balance._",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
@@ -565,7 +565,7 @@ class MenuRouter:
                 "• Transfer ke alamat deposit kamu\n"
                 "• Setelah masuk, transfer ke Futures\n\n"
                 "_Balance auto-sync setelah transfer._",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
@@ -625,7 +625,7 @@ class MenuRouter:
                 "• Masukkan alamat tujuan\n"
                 "• Withdrawal fee sesuai jaringan\n\n"
                 "_Ini mengurangi live balance._",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
@@ -659,7 +659,7 @@ class MenuRouter:
             page = SettingsPage(self.state_mgr)
             text, reply_markup = page.build(sub_page="llm")
             await query.answer("🤖 LLM Settings", show_alert=False)
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         elif key.startswith("llm_provider:"):
@@ -696,17 +696,17 @@ class MenuRouter:
                         "*✅ LLM Connected!*\n\n"
                         f"Status: ON\nProvider: {base_url.split('/')[2]}\n"
                         "Smart mode aktif — Hermes akan\nberi saran position size tiap cycle.",
-                        parse_mode="Markdown",
+                        parse_mode=None,
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:settings")]]))
                 else:
                     await query.edit_message_text(
                         f"*❌ LLM Error*\n\n`{resp.status_code}: {resp.text[:200]}`",
-                        parse_mode="Markdown",
+                        parse_mode=None,
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:settings")]]))
             except Exception as e:
                 await query.edit_message_text(
                     f"*❌ Connection Failed*\n\n`{e}`",
-                    parse_mode="Markdown",
+                    parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:settings")]]))
             return
 
@@ -715,7 +715,7 @@ class MenuRouter:
             page = SettingsPage(self.state_mgr)
             text, reply_markup = page.build(sub_page="cycle")
             await query.answer(f"⏱️ Cycle: {state.get('cycle_interval', 15)}s", show_alert=False)
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         elif key.startswith("cycle_set:"):
@@ -729,7 +729,7 @@ class MenuRouter:
             from .pages import SettingsPage
             page = SettingsPage(self.state_mgr)
             text, reply_markup = page.build(sub_page="cycle")
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         elif key == "symbol_page":
@@ -737,7 +737,7 @@ class MenuRouter:
             page = SettingsPage(self.state_mgr)
             text, reply_markup = page.build(sub_page="symbols")
             await query.answer(f"🪙 Symbol pool", show_alert=False)
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         elif key.startswith("symbol_toggle:"):
@@ -756,7 +756,7 @@ class MenuRouter:
             page = SettingsPage(self.state_mgr)
             text, reply_markup = page.build(sub_page="symbols")
             await query.answer(f"{'✅' if coin in current else '❌'} {coin}", show_alert=False)
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         # ── Settings page: symbol pool (old cycle) ──────────────────────────
@@ -765,7 +765,7 @@ class MenuRouter:
             page = SettingsPage(self.state_mgr)
             text, reply_markup = page.build(sub_page="symbols")
             await query.answer("🪙 Symbol pool", show_alert=False)
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
         # ── LLM Smart toggle — reject if no API key ─────────────────────────
@@ -777,7 +777,7 @@ class MenuRouter:
                 "Bisa pakai MiniMax, OpenAI, atau provider lain.\n"
                 "Ketik langsung di chat, jangan pake /.\n"
                 "Tekan ◀️ Back kalau mau cancel.",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("◀️ Back", callback_data="page:settings")]
                 ]),
@@ -893,7 +893,7 @@ class MenuRouter:
             keyboard = [[InlineKeyboardButton("◀️ Back", callback_data="page:risk")]]
             await query.edit_message_text(
                 text[:4000],  # Telegram message limit
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
@@ -917,7 +917,7 @@ class MenuRouter:
         await query.answer(msg, show_alert=True)
         try:
             text, reply_markup = self.nav.build(return_page)
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
         except Exception as e:
             # "Message is not modified" = user clicked same value again — benign
             err_str = str(e)
@@ -956,7 +956,7 @@ class MenuRouter:
                 [InlineKeyboardButton("◀️ Back", callback_data="page:wallet")],
             ]
             await query.answer("✅ Binance Futures", show_alert=False)
-            await query.edit_message_text(text, parse_mode="Markdown",
+            await query.edit_message_text(text, parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard))
             return
 
@@ -976,7 +976,7 @@ class MenuRouter:
                 [InlineKeyboardButton("◀️ Back", callback_data="page:wallet")],
             ]
             await query.answer("✅ Hyperliquid", show_alert=False)
-            await query.edit_message_text(text, parse_mode="Markdown",
+            await query.edit_message_text(text, parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard))
             return
 
@@ -988,7 +988,7 @@ class MenuRouter:
                 "Kirim API Key kamu di chat ini.\n"
                 "_Ketik aja langsung di chat, jangan pake /_\n"
                 "Tekan ◀️ Back kalau mau cancel.",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]
                 ]),
@@ -1004,7 +1004,7 @@ class MenuRouter:
                 "_JANGAN share ke siapapun!_\n"
                 "Ketik aja langsung di chat.\n"
                 "Tekan ◀️ Back kalau mau cancel.",
-                parse_mode="Markdown",
+                parse_mode=None,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]
                 ]),
@@ -1036,13 +1036,13 @@ class MenuRouter:
                     self.state_mgr.set("wallet_connected", True)
                 else:
                     text = "*✅ Hyperliquid Connected!*\n\nWallet: ✅ Connected"
-                await query.edit_message_text(text, parse_mode="Markdown",
+                await query.edit_message_text(text, parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]))
             except Exception as e:
                 await query.edit_message_text(
                     f"*❌ Connection Failed*\n\n`{e}`\n\n"
                     "Check API key/secret and try again.",
-                    parse_mode="Markdown",
+                    parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]))
             return
 
@@ -1061,7 +1061,7 @@ class MenuRouter:
             keyboard = [[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]
             await query.answer()
             try:
-                await query.edit_message_text(text, parse_mode="Markdown",
+                await query.edit_message_text(text, parse_mode=None,
                     reply_markup=InlineKeyboardMarkup(keyboard))
             except Exception:
                 pass
@@ -1089,7 +1089,7 @@ class MenuRouter:
             text, reply_markup = page.build(mode=mode, time_range=time_range, show_delete=True)
             await query.answer("🗑 Delete menu", show_alert=False)
             try:
-                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+                await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             except Exception as e:
                 log.error("handle_history delete_menu failed: %s", e)
             return
@@ -1133,7 +1133,7 @@ class MenuRouter:
             page = HistoryPage(self.trade_log)
             text, reply_markup = page.build(mode=mode, time_range=time_range)
             try:
-                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+                await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             except Exception as e:
                 log.error("handle_history delete failed: %s", e)
             return
@@ -1151,7 +1151,7 @@ class MenuRouter:
 
         await query.answer(f"📋 {mode.upper()} {time_range.upper()}", show_alert=False)
         try:
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
         except Exception as e:
             log.error("handle_history failed: %s", e)
 
@@ -1189,7 +1189,7 @@ class MenuRouter:
                 page = PositionsPage(self.trade_log, self.state_mgr)
                 text, reply_markup = page.build(mode=mode)
                 try:
-                    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+                    await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
                 except Exception as e:
                     log.error("handle_positions close failed: %s", e)
             return
@@ -1214,7 +1214,7 @@ class MenuRouter:
                     try:
                         await query.edit_message_text(
                             f"*📊 Partial Close — {sym}*\n\nPilih persentase untuk ditutup:",
-                            parse_mode="Markdown",
+                            parse_mode=None,
                             reply_markup=InlineKeyboardMarkup(keyboard),
                         )
                     except Exception as e:
@@ -1244,7 +1244,7 @@ class MenuRouter:
                     page = PositionsPage(self.trade_log, self.state_mgr)
                     text, reply_markup = page.build(mode=mode)
                     try:
-                        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+                        await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
                     except Exception as e:
                         log.error("handle_positions partial_exec failed: %s", e)
                 return
@@ -1268,7 +1268,7 @@ class MenuRouter:
             page = PositionsPage(self.trade_log, self.state_mgr)
             text, reply_markup = page.build(mode=mode)
             try:
-                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+                await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             except Exception as e:
                 log.error("handle_positions close_all failed: %s", e)
             return
@@ -1280,7 +1280,7 @@ class MenuRouter:
         text, reply_markup = page.build(mode=mode)
         await query.answer(f"📈 {mode.upper()} positions", show_alert=False)
         try:
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
         except Exception as e:
             log.error("handle_positions failed: %s", e)
 
@@ -1307,7 +1307,7 @@ class MenuRouter:
             text, reply_markup = page.build(mode=mode, time_range="24h")
             await query.answer("📋 Loading history...", show_alert=False)
             try:
-                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+                await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             except Exception as e:
                 log.error("handle_nav history failed: %s", e)
             return
@@ -1320,7 +1320,7 @@ class MenuRouter:
             text, reply_markup = page.build(mode=mode)
             await query.answer("📈 Loading positions...", show_alert=False)
             try:
-                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+                await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             except Exception as e:
                 log.error("handle_nav positions failed: %s", e)
             return
@@ -1328,18 +1328,18 @@ class MenuRouter:
         text, reply_markup = self.nav.build(page_key)
         try:
             await query.answer("📡 Loading...", show_alert=False)
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+            await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
         except Exception as e:
             log.error("handle_nav failed: %s", e)
 
     # ── Commands ────────────────────────────────────────────────────────────────
     async def cmd_start(self, update: Update, _: ContextTypes.DEFAULT_TYPE):
         text, reply_markup = self.nav.build("main")
-        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+        await update.message.reply_text(text, parse_mode=None, reply_markup=reply_markup)
 
     async def cmd_help(self, update: Update, _: ContextTypes.DEFAULT_TYPE):
         text, reply_markup = self.nav.build("help")
-        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+        await update.message.reply_text(text, parse_mode=None, reply_markup=reply_markup)
 
 
 # ── TradeLog import for router init ──────────────────────────────────────────
@@ -1405,7 +1405,7 @@ async def _handle_mode_callback(update, _, state_mgr):
     await query.answer(f"Mode: {label}", show_alert=True)
     text, reply_markup = MenuRouter(state_mgr, None, None, None, None).nav.build("mode")
     try:
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+        await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
     except Exception:
         pass
 
@@ -1418,7 +1418,7 @@ async def _handle_dir_callback(update, _, state_mgr):
     await query.answer(f"Direction: {new_dir.upper()}", show_alert=True)
     text, reply_markup = MenuRouter(state_mgr, None, None, None, None).nav.build("direction")
     try:
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
+        await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
     except Exception:
         pass
 
@@ -1441,7 +1441,7 @@ async def _handle_text_input(update: Update, _: ContextTypes.DEFAULT_TYPE):
             f"*✅ LLM API Key saved!*\n\n"
             f"Key: `{text[:8]}...`\n\n"
             "Tekan TEST di menu Settings untuk verify.",
-            parse_mode="Markdown",
+            parse_mode=None,
         )
         return
 
@@ -1457,7 +1457,7 @@ async def _handle_text_input(update: Update, _: ContextTypes.DEFAULT_TYPE):
         router.state_mgr.set("pending_input", "")
         current = router.state_mgr.get().get("live_balance", 0)
         router.state_mgr.set("live_balance", current + amount)
-        await update.message.reply_text(f"*✅ Added ${amount:.2f}*\n\nNew balance: ${current + amount:.2f}", parse_mode="Markdown")
+        await update.message.reply_text(f"*✅ Added ${amount:.2f}*\n\nNew balance: ${current + amount:.2f}", parse_mode=None)
         return
 
     if pending == "send_fund":
@@ -1473,19 +1473,19 @@ async def _handle_text_input(update: Update, _: ContextTypes.DEFAULT_TYPE):
         current = router.state_mgr.get().get("live_balance", 0)
         new_bal = max(0, current - amount)
         router.state_mgr.set("live_balance", new_bal)
-        await update.message.reply_text(f"*✅ Sent ${amount:.2f}*\n\nNew balance: ${new_bal:.2f}", parse_mode="Markdown")
+        await update.message.reply_text(f"*✅ Sent ${amount:.2f}*\n\nNew balance: ${new_bal:.2f}", parse_mode=None)
         return
 
     if pending == "wallet_api_key":
         router.state_mgr.set("wallet_api_key", text)
         router.state_mgr.set("pending_input", "")
-        await update.message.reply_text(f"*✅ API Key saved!*\n\n`{text[:8]}...`", parse_mode="Markdown")
+        await update.message.reply_text(f"*✅ API Key saved!*\n\n`{text[:8]}...`", parse_mode=None)
         return
 
     if pending == "wallet_api_secret":
         router.state_mgr.set("wallet_api_secret", text)
         router.state_mgr.set("pending_input", "")
-        await update.message.reply_text("*✅ API Secret saved!*", parse_mode="Markdown")
+        await update.message.reply_text("*✅ API Secret saved!*", parse_mode=None)
         return
 
     if pending == "llm_key":
