@@ -33,6 +33,23 @@ class StatusPage(MenuPage):
         strategy_label = f"{strat_count} strategi" if strat_count else "none"
         trading = "🟢 Active" if state.get("trading_enabled") else "🔴 Stopped"
 
+        # ── Risk state (synced from AutoTrader) ───────────────────────────
+        risk_enabled = state.get("risk_trading_enabled", True)
+        risk_regime = state.get("risk_volatility_regime", "—")
+        risk_kelly = state.get("risk_kelly_pct", 0.0)
+        risk_var_1d = state.get("risk_var_1d_usd", 0.0)
+        risk_daily_pnl = state.get("risk_daily_pnl_usd", 0.0)
+        risk_open_pos = state.get("risk_open_positions", 0)
+
+        regime_map = {"bullish": "📈", "bearish": "📉", "sideway": "↔️"}
+        regime_icon = regime_map.get(risk_regime, "❓")
+
+        risk_status = "🟢 ON" if risk_enabled else "🔴 KILL"
+        risk_kelly_str = f"{risk_kelly:.1f}%" if risk_kelly else "—"
+        risk_var_str = f"${risk_var_1d:,.2f}" if risk_var_1d else "$—"
+        risk_pnl_str = f"+${risk_daily_pnl:,.2f}" if risk_daily_pnl >= 0 else f"${risk_daily_pnl:,.2f}"
+        risk_pnl_icon = "📈" if risk_daily_pnl >= 0 else "📉"
+
         # ── DRY RUN ────────────────────────────────────────────────────────
         dr_trades = self.trade_log.all(mode="dry_run") if self.trade_log else []
         dr_init = state.get("dry_run_initial_balance", 100)
@@ -73,6 +90,8 @@ class StatusPage(MenuPage):
             f"*Wallet:* {'✅ Connected' if wallet_connected else '❌ Not connected'}\n"
             f"*Strategy:* `{strategy_label}` | `{strategy_display}`\n"
             f"*Trading:* {trading}\n\n"
+            f"*🛡️ Risk:* {risk_status} | {regime_icon} {risk_regime} | Kelly {risk_kelly_str} | VaR 1d {risk_var_str}\n"
+            f"*📈 Daily PnL:* {risk_pnl_icon} {risk_pnl_str} | Open: {risk_open_pos} pos\n\n"
             f"*🟡 DRY RUN{active_dr}*\n"
             f"  Balance: `${dr_bal:,.2f}` | PnL: {dr_pnl_emoji} `{dr_pnl_str}`\n"
             f"  Open: {dr_open} | 24h WR: {dr_wr_emoji} {dr_wr:.1f}%\n\n"

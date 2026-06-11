@@ -11,7 +11,7 @@ from .core import MenuPage, MenuNavigator, make_back_button
 from .pages import (
     MainPage, StatusPage, HelpPage, PositionsPage, StrategyPage,
     HistoryPage, BalancePage, WalletPage, SmartPage, QuickPage,
-    ModePage, DirectionPage, MonitorPage, SettingsPage,
+    ModePage, DirectionPage, MonitorPage, SettingsPage, RiskPage,
 )
 
 
@@ -41,6 +41,7 @@ class MenuRouter:
             # Direction page — hidden (direction always "both" internally)
             "monitor": MonitorPage(state_mgr, trade_log, perf, loader),
             "settings": SettingsPage(state_mgr),
+            "risk": RiskPage(state_mgr),
         }
         self.nav = MenuNavigator(pages)
 
@@ -780,6 +781,120 @@ class MenuRouter:
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("◀️ Back", callback_data="page:settings")]
                 ]),
+            )
+            return
+
+        # ── Risk kill / resume ────────────────────────────────────────────────────────
+        elif key == "risk_kill":
+            self.state_mgr.set("_risk_action", "kill")
+            await query.answer("🔴 Trading akan dihentikan...", show_alert=True)
+            await self._navigate_to(update, "risk")
+            return
+
+        elif key == "risk_resume":
+            self.state_mgr.set("_risk_action", "resume")
+            await query.answer("🟢 Trading resumed!", show_alert=True)
+            await self._navigate_to(update, "risk")
+            return
+
+        # ── Stress test scenarios ─────────────────────────────────────────────
+        elif key.startswith("stress_"):
+            scenario = key[7:]  # e.g. "flash_crash", "black_swan"
+            await query.answer("🧪 Running stress test...", show_alert=False)
+
+            state = self.state_mgr.get()
+            balance = state.get("dry_run_balance", 10000)
+            mode = state.get("mode", "dry_run")
+            open_pos = self.trade_log.get_active(mode=mode) if self.trade_log else []
+            notional = balance * 0.2  # 20% exposure assumption
+            leverage = 3
+
+            # Get BTC price for stress test
+            entry_price = 67000.0
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as sess:
+                    async with sess.get(
+                        "https://fapi.binance.com/fapi/v1/ticker/price?symbol=BTCUSDT",
+                        timeout=aiohttp.ClientTimeout(total=3)
+                    ) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            entry_price = float(data["price"])
+            except Exception:
+                pass
+
+            # Get 30d candles for VaR-based price series
+            prices = []
+            try:
+                async with aiohttp.ClientSession() as sess:
+                    async with sess.get(
+                        "https://fapi.binance.com/fapi/v1/klines",
+                        params={"symbol": "BTCUSDT", "interval": "1d", "limit": 30},
+                        timeout=aiohttp.ClientTimeout(total=5)
+                    ) as kr:
+                        if kr.status == 200:
+                            klines = await kr.json()
+                            prices = [float(k[4]) for k in klines]
+            except Exception:
+                pass
+
+            if not prices:
+                # Fallback synthetic
+                import random
+                prices = [entry_price * (1 + random.uniform(-0.02, 0.02)) for _ in range(30)]
+
+            # Map scenario to stress test function
+            scenario_map = {
+                "black_swan": ("black swan", "Black Swan"),
+                "liquidation_cascade": ("liquidation cascade", "Liquidation Cascade"),
+                "market_maker_withdrawal": ("market maker withdrawal", "Market Maker Withdrawal"),
+                "correlation_breakdown": ("correlation breakdown", "Correlation Breakdown"),
+                "sudden_funding_spike": ("sudden funding spike", "Funding Spike"),
+            }
+
+            from ...trading import stress_test as st_module
+            scenario_key, scenario_label = scenario_map.get(scenario, ("black_swan", "Unknown"))
+
+            # Use the main run_stress_test function
+            report = st_module.run_stress_test(
+                prices=prices,
+                notional=notional,
+                position_entry=entry_price,
+                position_size=1.0,
+                leverage=leverage,
+            )
+
+            # Format result for display
+            overall = "✅ PASSED" if report["overall_passed"] else "🚨 FAILED"
+            worst = report["worst_severity"].upper()
+            total_loss = report["total_estimated_loss_usd"]
+            worst_loss = report["worst_scenario_loss_usd"]
+
+            lines = [
+                f"*🧪 STRESS TEST — {scenario_label}*\\n\\n",
+                f"Overall: {overall}\\n",
+                f"Worst: {worst}\\n",
+                f"Total Est. Loss: ${total_loss:,.2f}\\n",
+                f"Worst Scenario Loss: ${worst_loss:,.2f}\\n\\n",
+                "*Scenarios:*\\n",
+            ]
+            for s in report["scenarios"]:
+                icon = "✅" if s["passed"] else "🚨"
+                lines.append(
+                    f"{icon} {s['scenario'].upper()} — Loss: {s['estimated_loss_pct']:.2f}% "
+                    f"(${s['estimated_loss_usd']:,.2f})\\n"
+                )
+                lines.append(f"   💡 {s['recommendation'][:80]}\\n\\n")
+
+            lines.append("_Tekan ◀️ Back untuk kembali ke Risk page._")
+            text = "".join(lines)
+
+            keyboard = [[InlineKeyboardButton("◀️ Back", callback_data="page:risk")]]
+            await query.edit_message_text(
+                text[:4000],  # Telegram message limit
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
             )
             return
 

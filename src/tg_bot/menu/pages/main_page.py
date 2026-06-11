@@ -31,6 +31,9 @@ class MainPage(MenuPage):
             ],
             [
                 InlineKeyboardButton("🛠️ Settings", callback_data="page:settings"),
+                InlineKeyboardButton("🛡️ Risk", callback_data="page:risk"),
+            ],
+            [
                 InlineKeyboardButton("❓ Help", callback_data="page:help"),
             ],
             [

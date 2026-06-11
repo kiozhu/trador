@@ -12,6 +12,12 @@ from ..scanners import (
     VolumeProfileScanner, FundingScanner, SMCScanner,
 )
 from .engine import TradingEngine
+from .risk_guard import RiskGuard, RiskGuardConfig, TradingMode
+from .kelly_sizer import KellySizer
+from .rolling_buffer import RollingBuffer
+from .var_calc import compute_var
+from . import stress_test as stress_test_module
+from .strategies import StrategyScorer
 
 
 class AutoTrader:
@@ -26,6 +32,7 @@ class AutoTrader:
         perf,
         scan_interval: int = 8,
         hermes_reporter=None,
+        risk_guard: RiskGuard | None = None,
     ):
         self.engine = engine
         self.state_mgr = state_mgr
@@ -36,6 +43,32 @@ class AutoTrader:
         self.hermes_reporter = hermes_reporter  # HermesReporter instance for trade reporting
         self._task: asyncio.Task | None = None
         self.running = False
+
+        # ── Risk Engine ──────────────────────────────────────────────────────────
+        # RiskGuard — 10-layer pre-trade validation + kill/resume
+        if risk_guard is not None:
+            self.risk_guard = risk_guard
+        else:
+            # Default config from state
+            state = state_mgr.get()
+            cfg = RiskGuardConfig(
+                max_open_positions=state.get("max_concurrent_positions", 5),
+                max_trades_per_day=state.get("max_trades_per_day", 20),
+                max_trades_per_hour=state.get("max_trades_per_hour", 5),
+                daily_loss_limit_pct=state.get("daily_loss_limit_pct", 5.0),
+            )
+            self.risk_guard = RiskGuard(config=cfg, state_mgr=state_mgr)
+
+        # KellySizer — dynamic position sizing
+        self.kelly_sizer = KellySizer(base_kelly_pct=25.0, max_kelly_pct=50.0)
+
+        # RollingBuffer — trade history stats (for Kelly adjustment factors)
+        from pathlib import Path
+        memory_dir = Path(__file__).parent.parent / "memory"
+        self.rolling_buffer = RollingBuffer(maxlen=200, persist_path=memory_dir / "rolling_stats.json")
+
+        # VaR cache (updated periodically)
+        self._var_cache: dict = {}
 
         # ── Configurable symbol pool ─────────────────────────────────────────
         self.symbol_pool = [
@@ -136,6 +169,86 @@ class AutoTrader:
                 pass
         log.info("AutoTrader stopped")
 
+    # ── Risk state sync ─────────────────────────────────────────────────────────
+
+    async def _sync_risk_state(self):
+        """Sync RiskGuard state to state_mgr for UI display."""
+        state = self.state_mgr.get()
+        balance = state.get("dry_run_balance", 10000)
+
+        # Get open positions count
+        mode = state.get("mode", "dry_run")
+        open_pos = self.trade_log.get_active(mode=mode) if self.trade_log else []
+        open_count = len(open_pos)
+
+        # Get rolling stats
+        stats = self.rolling_buffer.get_stats()
+        win_rate = stats.win_rate / 100.0 if stats.win_rate else 0.55
+
+        # VaR calculation (1d and 7d)
+        var_1d = self._var_cache.get("1d", {})
+        if not var_1d:
+            # Try to get BTC price for VaR
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as sess:
+                    async with sess.get("https://fapi.binance.com/fapi/v1/ticker/price?symbol=BTCUSDT",
+                                       timeout=aiohttp.ClientTimeout(total=3)) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            btc_price = float(data["price"])
+                            # Fetch 30d candles for VaR
+                            async with sess.get(
+                                "https://fapi.binance.com/fapi/v1/klines",
+                                params={"symbol": "BTCUSDT", "interval": "1d", "limit": 30},
+                                timeout=aiohttp.ClientTimeout(total=5)
+                            ) as kr:
+                                if kr.status == 200:
+                                    klines = await kr.json()
+                                    prices = [float(k[4]) for k in klines]
+                                    notional = balance * 0.2  # 20% exposure
+                                    var_1d = compute_var(prices, notional, "historical", 0.95, 1)
+                                    var_7d = compute_var(prices, notional, "historical", 0.95, 7)
+                                    self._var_cache["1d"] = var_1d
+                                    self._var_cache["7d"] = var_7d
+            except Exception:
+                pass
+
+        var_1d = self._var_cache.get("1d", {})
+        var_7d = self._var_cache.get("7d", {})
+
+        # Kelly fraction (from KellySizer)
+        kelly_pct = self.kelly_sizer.size(
+            balance=balance,
+            trade={"win_rate": win_rate, "open_positions": open_count,
+                   "market_regime": self._market_regime},
+            win_rate=win_rate,
+            avg_win_pct=3.0,
+            avg_loss_pct=-2.0,
+        )
+
+        # Daily PnL
+        session_start = state.get("session_start_balance", balance)
+        daily_pnl = balance - session_start
+        daily_pnl_pct = (daily_pnl / session_start * 100) if session_start else 0
+
+        # Risk state snapshot
+        risk_state = {
+            "risk_trading_enabled": not self.risk_guard.is_killed(),
+            "risk_volatility_regime": self._market_regime,
+            "risk_kelly_pct": round(kelly_pct, 2),
+            "risk_var_1d_usd": var_1d.get("var_usd", 0),
+            "risk_cvar_1d_usd": var_1d.get("cvar_usd", 0),
+            "risk_var_7d_usd": var_7d.get("var_usd", 0),
+            "risk_cvar_7d_usd": var_7d.get("cvar_usd", 0),
+            "risk_daily_pnl_usd": round(daily_pnl, 2),
+            "risk_daily_pnl_pct": round(daily_pnl_pct, 2),
+            "risk_open_positions": open_count,
+            "risk_consecutive_losses": self.risk_guard._consecutive_losses,
+            "risk_killswitch_reason": self.risk_guard.killswitch_reason(),
+        }
+        self.state_mgr.update(**risk_state)
+
     # ── Main loop ───────────────────────────────────────────────────────────────
 
     async def _loop(self):
@@ -162,6 +275,18 @@ class AutoTrader:
         # Sync state with actual AutoTrader status
         if self.running and state.get("bot_status") != "running":
             self.state_mgr.set_status("running")
+
+        # ── Handle _risk_action from Telegram UI ───────────────────────────
+        risk_action = state.get("_risk_action", "")
+        if risk_action == "kill":
+            self.risk_guard.kill("Manual kill via UI")
+            self.state_mgr.set("_risk_action", "")
+        elif risk_action == "resume":
+            self.risk_guard.resume()
+            self.state_mgr.set("_risk_action", "")
+
+        # ── Sync risk state to state_mgr (for UI display) ─────────────────
+        await self._sync_risk_state()
 
         if not state.get("trading_enabled", False):
             return
@@ -284,10 +409,30 @@ class AutoTrader:
             return
 
         # ── Step 4: Execute top candidate(s) ───────────────────────────────
+        state = self.state_mgr.get()
+        balance = state.get("dry_run_balance", 10000)
         for candidate in candidates[:2]:  # max 2 per cycle
             best_strategy = _candidate_strategies.get(
                 (candidate["symbol"], candidate.get("score", 0)), strategy
             )
+            # ── RiskGuard pre-trade validation ──────────────────────────
+            trade_for_check = {
+                "symbol": candidate["symbol"],
+                "side": candidate["side"],
+                "size_value": state.get("balance_per_trade_pct", 10),
+                "open_positions": self.trade_log.get_active(mode=mode) if self.trade_log else [],
+                "market_regime": self._market_regime,
+                "atr_pct": candidate.get("atr_pct", 0),
+            }
+            can_trade, risk_results = self.risk_guard.can_trade(trade_for_check, balance)
+            if not can_trade:
+                blocked = [r for r in risk_results if not r.passed]
+                log.warning("RiskGuard blocked %s %s: %s",
+                            candidate["symbol"], candidate["side"],
+                            blocked[0].reason if blocked else "unknown")
+                continue
+            # ── End RiskGuard check ──────────────────────────────────────
+
             await self._execute_trade(candidate, best_strategy, mode)
 
     async def _detect_market_regime(self, strategy: dict) -> str:
@@ -864,7 +1009,6 @@ class AutoTrader:
         state = self.state_mgr.get()
 
         # ── Position sizing ──────────────────────────────────────────────
-        # Determine % of balance to risk
         sizing_mode = state.get("position_sizing_mode", "fixed_percent")
         llm_enabled = state.get("llm_enabled", False)
         balance = state.get("dry_run_balance", 10000)
@@ -881,11 +1025,35 @@ class AutoTrader:
                 size_pct = scorer.position_size(balance, signal, self._market_regime)
                 size_pct = min(size_pct, max_pos_pct)  # Safety cap
             else:
-                # Fallback to fixed
-                size_pct = min(fixed_pct, max_pos_pct)
+                # Fallback to Kelly sizing
+                kelly_pct = self.kelly_sizer.size(
+                    balance=balance,
+                    trade={
+                        "win_rate": 0.55,
+                        "open_positions": len(self.trade_log.get_active(mode=mode)) if self.trade_log else 0,
+                        "market_regime": self._market_regime,
+                        "atr_pct": 1.5,
+                    },
+                    win_rate=0.55,
+                    avg_win_pct=3.0,
+                    avg_loss_pct=-2.0,
+                )
+                size_pct = min(kelly_pct, max_pos_pct)
         else:
-            # Fixed % mode
-            size_pct = min(fixed_pct, max_pos_pct)
+            # Use KellySizer for dynamic sizing (replaces fixed_pct)
+            kelly_pct = self.kelly_sizer.size(
+                balance=balance,
+                trade={
+                    "win_rate": 0.55,
+                    "open_positions": len(self.trade_log.get_active(mode=mode)) if self.trade_log else 0,
+                    "market_regime": self._market_regime,
+                    "atr_pct": 1.5,
+                },
+                win_rate=0.55,
+                avg_win_pct=3.0,
+                avg_loss_pct=-2.0,
+            )
+            size_pct = min(kelly_pct, max_pos_pct)
 
         trade = {
             "id": f"auto_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
@@ -914,6 +1082,14 @@ class AutoTrader:
             result = await self._simulate_trade(trade)
             self.trade_log.add(result)
             self.perf.update(mode=mode)
+
+            # ── Update RollingBuffer (for Kelly adjustment factors) ───
+            self.rolling_buffer.add(result)
+
+            # ── Update RiskGuard with trade outcome ──────────────────────
+            self.risk_guard.record_trade_result(result.get("pnl_pct", 0))
+            self.risk_guard.update_balance(balance + result.get("pnl", 0))
+
             if self.hermes_reporter:
                 self.hermes_reporter.write_trade(result)
 

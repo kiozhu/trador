@@ -13,12 +13,13 @@ from .mode_page import ModePage
 from .direction_page import DirectionPage
 from .monitor_page import MonitorPage
 from .settings_page import SettingsPage, LLM_PROVIDERS
+from .risk_page import RiskPage
 
 __all__ = [
     "MainPage", "StatusPage", "HelpPage",
     "PositionsPage", "StrategyPage", "HistoryPage",
     "BalancePage", "WalletPage", "SmartPage",
     "QuickPage", "ModePage", "DirectionPage",
-    "MonitorPage", "SettingsPage",
+    "MonitorPage", "SettingsPage", "RiskPage",
     "LLM_PROVIDERS",
 ]
