@@ -80,12 +80,10 @@ class Trador:
         setup_menu_router(self.app, self.state_mgr, self.perf, self.engine, self.trade_log, self.loader)
 
         # ── Slash commands (sync with bot command menu) ───────────────────────
-        from .tg_bot.handlers.quick_actions import cmd_status, cmd_pnl, cmd_strategies, cmd_cancel_all, cmd_close_all
-        self.app.add_handler(CommandHandler("status", lambda u, c: cmd_status(u, c, self.state_mgr), block=False))
-        self.app.add_handler(CommandHandler("pnl", lambda u, c: cmd_pnl(u, c, self.state_mgr), block=False))
-        self.app.add_handler(CommandHandler("strategies", lambda u, c: cmd_strategies(u, c, self.loader), block=False))
-        self.app.add_handler(CommandHandler("cancel", lambda u, c: cmd_cancel_all(u, c, self.state_mgr), block=False))
-        self.app.add_handler(CommandHandler("closeall", lambda u, c: cmd_close_all(u, c, self.state_mgr), block=False))
+        from .tg_bot.handlers.menu import cmd_status as cmd_status_menu
+        from .tg_bot.handlers.pnl import cmd_pnl
+        self.app.add_handler(CommandHandler("status", lambda u, c: cmd_status_menu(u, c, self.state_mgr, self.perf), block=False))
+        self.app.add_handler(CommandHandler("pnl", lambda u, c: cmd_pnl(u, c), block=False))
 
         # ── Text button handlers ─────────────────────────────────────────────
         text_buttons = {

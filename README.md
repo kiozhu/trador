@@ -1,123 +1,162 @@
-# Trador — Automated Crypto Futures Trading Bot
+# Trador — Bot Trading Crypto Futures Otomatis
 
-Bot trading crypto futures otomatis — dikontrol penuh via Telegram. Didukung 11 strategi, 6 scanners market, backtesting, dan Smart Mode dengan LLM.
+Bot trading crypto futures dengan kontrol penuh via **Telegram**. Didesain untuk traders yang ingin automasi penuh tapi tetap bisa intervene kapan saja. Tidak ada black box — semua logic visible, semua keputusan bisa di-audit.
 
-> **Trador = BODY (eksekutor).** Dieksekusi persis. **Hermes = CONTROLLER** yang menganalisa hasil dan memberi saran. Jangan pernah ada credentials di committed code.
-
----
-
-## ✨ Kelebihan Sistem
-
-| # | Kelebihan | Penjelasan |
-|---|-----------|------------|
-| 1 | **11 Strategi Auto** | Semua strategi berjalan otomatis — whale rider, funding arbitrage, grid hunter, scalp rapid, swing stealth, breakout pro, fvg catcher, liquidation hunter, orderblock hunter, liquidity sweep, momentum EMA |
-| 2 | **6 Scanner Real-time** | Whale, liquidation, orderbook, volume profile, funding rate, SMC — semua dapat data dari public API (gratis, tanpa API key) |
-| 3 | **6 Exch +1 Wallet** | Binance Futures + Hyperliquid. Tidak ada Bybit/OKX. Hyperliquid tanpa wallet address — hanya API key + secret |
-| 4 | **Hermes Self-Improve** | Direct edit strategy YAML files. Fokus improvement only, tidak interfere execution. LLM separated — hanya untuk improvement tasks, bukan trading decisions |
-| 5 | **Smart Mode + LLM** | LLM-driven position sizing. Input API key LLM → validasi → konfirmasi. Cycle interval dengan deskripsi. Daily loss limit dalam dollar (bukan %) |
-| 6 | **Dry Run + Live** | Dry run balance $100 (bukan $50k). Live balance sync dari wallet API. Tidak ada input manual untuk live |
-| 7 | **Inline Keyboard Menu** | Semua menu pakai InlineKeyboardMarkup — trojan-style callback, tidak pakai ReplyKeyboardMarkup. Emoji di kiri tombol |
-| 8 | **A-Z Coin Filter** | Symbol pool dari Binance Futures real data (50 coins). Filter huruf A-Z langsung dari keyboard, tidak perlu text input |
-| 9 | **Backtesting** | Equity curve + drawdown chart + Sharpe/Sortino/Max Drawdown metrics |
-| 10 | **Zero Credentials in Git** | `.env` selalu unstaged sebelum commit. Tidak ada API key/secret/token di Git history |
+> ⚠️ **Status: DRY RUN ONLY** — Bot ini BELUM siap untuk live money. Track record dry-run belum membuktikan profitabilitas. Baca bagian "Persiapan Live Money" sebelum berpikir untuk menggunakan uang sungguhan.
 
 ---
 
 ## 📋 Daftar Isi
 
-1. [Kelebihan](#-kelebihan-sistem)
-2. [Ringkasan](#-ringkasan)
-3. [Persyaratan](#-persyaratan)
-4. [Instalasi](#-instalasi)
+1. [Kelebihan Sistem](#-kelebihan-sistem)
+2. [Arsitektur](#-arsitektur)
+3. [Komponen Inti](#-komponen-inti)
+4. [Persiapan & Instalasi](#-persiapan--instalasi)
 5. [Konfigurasi](#-konfigurasi)
 6. [Menu Telegram](#-menu-telegram)
-7. [Strategi](#-strategi)
-8. [Scanners](#-scanners)
-9. [Mode Trading](#-mode-trading)
-10. [Wallet Connect](#-wallet-connect)
-11. [Hermes Self-Improve](#-hermes-self-improve)
-12. [Backtesting](#-backtesting)
-13. [FAQ](#-faq)
-14. [Troubleshooting](#-troubleshooting)
-15. [Struktur Folder](#-struktur-folder)
+7. [Strategi Trading](#-strategi-trading)
+8. [6 Scanner Market](#-6-scanner-market)
+9. [Risk Engine](#-risk-engine)
+10. [Mode Trading](#-mode-trading)
+11. [Backtesting](#-backtesting)
+12. [Persiapan Live Money](#-persiapan-live-money)
+13. [Troubleshooting](#-troubleshooting)
+14. [Struktur Folder](#-struktur-folder)
 
 ---
 
-## 🔰 Ringkasan
+## ✅ Kelebihan Sistem
 
-```
-Trador
-├── Telegram Bot      ← kontrol di sini
-├── Trading Engine    ← ccxt → Binance Futures / Hyperliquid
-├── Strategy Config   ← YAML files, hot-reload
-├── Memory System     ← trade history, performance
-├── 6 Scanners        ← market data real-time
-├── LLM Scorer        ← scoring kualitas eksekusi
-└── Hermes Comm       ← file-based JSON reports/suggestions
-```
-
-**Fitur utama:**
-- 11 strategi trading (Whale Rider, EMA Cross, MACD Reversal, RSI Extreme, dll.)
-- 6 scanner market real-time (liquidation, orderbook, whales, funding rate, volume profile, SMC)
-- Live Mode / Dry Run Mode
-- Hyperliquid + Binance Futures support
-- Backtesting dengan equity curve + drawdown
-- Smart Mode: LLM-driven position sizing via Hermes passive controller
+| # | Kelebihan | Penjelasan |
+|---|-----------|------------|
+| 1 | **11 Strategi Auto** | whale_rider, funding_arbitrage, scalp_rapid, swing_stealth, breakout_pro, fvg_catcher, liquidation_hunter, orderblock_hunter, liquidity_sweep, momentum_ema, grid_hunter |
+| 2 | **6 Scanner Real-time** | whale, liquidation, orderbook, volume_profile, funding, smc — semua dari public API Binance (gratis, tanpa API key) |
+| 3 | **Risk Engine Terintegrasi** | RiskGuard, Kelly Sizing, VaR/CVaR, Order Flow Imbalance, Volatility Regime, Stress Test, Daily Loss Circuit Breaker |
+| 4 | **MTF Multi-Timeframe** | Analisa 3 timeframe (15m/1h/4h) sebelum entry — konfirmasi trend sebelum buka posisi |
+| 5 | **LLM Smart Mode** | Position sizing yang driven oleh AI — cocok untuk yang mau automasi cerdas |
+| 6 | **Hermes Self-Improve** | Cron job otomatis yang analisa trade history → edit strategy YAML langsung |
+| 7 | **Telegram-First Control** | Semua kontrol dari inline keyboard menu — tidak perlu CLI, tidak perlu SSH |
+| 8 | **Dry Run + Live** | Dry run dengan balance virtual $100 — sebelum pakai uang sungguhan |
+| 9 | **Backtesting** | Equity curve + drawdown + Sharpe/Sortino/MaxDD dari data historis |
+| 10 | **Zero Credentials in Git** | `.env` tidak pernah masuk Git — API keys aman |
 
 ---
 
-## 📦 Persyaratan
+## 🏗️ Arsitektur
 
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     TELEGRAM BOT                             │
+│  InlineKeyboardMenu (12 pages: main, status, balance, dll)  │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│                     TRADING ENGINE                          │
+│                                                              │
+│  ┌──────────────┐   ┌──────────────────┐   ┌───────────┐     │
+│  │ AUTO TRADER  │   │  6 MARKET        │   │  RISK     │     │
+│  │ (scan cycle) │──→│  SCANNERS        │   │  ENGINE   │     │
+│  └──────┬───────┘   └──────────────────┘   │           │     │
+│         │                                     │• RiskGuard│    │
+│         │         ┌──────────────────┐      │• Kelly    │    │
+│         └────────→│  11 STRATEGIES   │      │• VaR/CVaR │    │
+│                   │  (YAML hot-reload)│      │• OBI      │    │
+│                   └──────────────────┘      │• Stress   │    │
+│                                             │• Daily LB │    │
+│                   ┌──────────────────┐      └───────────┘    │
+│                   │  MTF ANALYZER    │                      │
+│                   │  (15m/1h/4h)     │                      │
+│                   └──────────────────┘                      │
+└────────────────────────────┬──────────────────────────────┘
+                             │
+          ┌──────────────────┴──────────────────┐
+          ↓                                       ↓
+┌─────────────────────┐              ┌─────────────────────┐
+│  BINANCE FUTURES    │              │   HYPERLIQUID       │
+│  (ccxt)             │              │   (ccxt)            │
+│  • API Key + Secret │              │   • API Key + Secret│
+│  • Real balance    │              │   • No wallet addr   │
+└─────────────────────┘              └─────────────────────┘
+```
+
+---
+
+## 🧩 Komponen Inti
+
+### Auto Trader (scan cycle 15s)
+- Loop utama: fetch prices → run scanners → run strategies → score → filter risk → execute
+- Sync `_risk_state` ke state.json setiap cycle (bukan hanya saat trade)
+- Consume `_risk_action` dari Telegram (kill/resume)
+- MTF bypass: score ≥ 80 langsung execute tanpa LLM
+
+### 6 Market Scanners
+| Scanner | Sumber Data | Fungsi |
+|---------|-------------|--------|
+| `whale` | Public Binance OHLCV | Detect large wallet activity via volume spikes |
+| `liquidation` | Public Binance orderbook | Liquidated positions detection |
+| `orderbook` | Public Binance depth | Order book imbalance analysis |
+| `volume_profile` | Public Binance klines | Volume profile + POC detection |
+| `funding` | Public Binance funding rate | Funding rate anomaly detection |
+| `smc` | Public Binance OHLCV + orderbook | Smart Money Concept signals |
+
+### 11 Strategi (YAML hot-reload)
+Semua strategi dalam `strategies/*.json` — edit langsung tanpa restart bot. StrategyLoader auto-reload setiap perubahan.
+
+### Risk Engine (5 komponen)
+- **RiskGuard** — pre-trade validation (10-layer), circuit breaker, kill/resume switch
+- **KellySizer** — dynamic position sizing berdasarkan win rate + Kelly criterion
+- **VaRCalc** — Value at Risk + Conditional VaR untuk portfolio risk
+- **OBIAnalyzer** — Order Flow Imbalance untuk eksekusi quality
+- **StressTest** — 5 scenario (flash crash, black swan, dll.) dengan estimated loss + rekomendasi
+
+### MTF Analyzer
+Analisa 3 timeframe (15m/1h/4h) secara parallel. Score ≥ 80 langsung execute (bypass LLM reasoning). Sideway detection + bounce detection untuk avoid false breakouts.
+
+---
+
+## 🔧 Persiapan & Instalasi
+
+### Requirements
 - Python 3.10+
-- Node.js 20+ (untuk development)
 - Telegram Bot Token (dari @BotFather)
-- API Key + Secret dari Binance Futures ATAU Hyperliquid
-- Hermes Agent (opsional — untuk Smart Mode + self-improvement)
+- API Key + Secret Binance Futures **ATAU** Hyperliquid (hanya untuk live mode)
+- Hermes Agent (opsional — untuk Smart Mode + self-improve cron job)
 
----
-
-## 🚀 Instalasi
+### Instalasi
 
 ```bash
-# Clone repo
+# 1. Clone repo
 git clone https://github.com/kiozhu/trador.git
 cd trador
 
-# Install dependencies
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# Setup environment
+# 3. Setup environment
 cp .env.example .env
-nano .env   # isi BOT_TOKEN, ADMIN_CHAT_ID, API keys
+nano .env   # isi BOT_TOKEN, ADMIN_CHAT_ID, API keys (jika ada)
+
+# 4. Jalankan (mode module flag WAJIB)
+python3 -m src.main
 ```
 
-### Setup Python path
+### Cara Kerja Python Path
+Trador pakai module flag (`-m src.main`) karena `src/` ada di root. Kalau pakai `python3 src/main.py` akan error import.
 
+### Jalankan di Background
 ```bash
-# Method 1: module flag (recommended)
-python3 -m src.main
-
-# Method 2: set PYTHONPATH
-export PYTHONPATH=src:$PYTHONPATH
-python3 src/main.py
-
-# Method 3: run from src/
-cd src && python3 main.py
-```
-
-### Start bot
-
-```bash
-python3 -m src.main
-# atau background:
+# Cara 1: nohup (cek process manual)
 nohup python3 -m src.main > logs/trador.log 2>&1 &
+
+# Cara 2: dari start script (double-spawn fix untuk Hermes)
+bash charon2/start.sh
 ```
 
-### Restart
-
+### Cek Bot Alive
 ```bash
-pkill -f "python3 -m src.main"
-python3 -m src.main
+pgrep -f "python3 -m src.main"
+ps aux | grep "python3 -m src.main" | grep -v grep | wc -l
 ```
 
 ---
@@ -127,116 +166,80 @@ python3 -m src.main
 Edit file `.env`:
 
 ```bash
-BOT_TOKEN=               # Telegram bot token (dari @BotFather)
-ADMIN_CHAT_ID=           # Telegram chat ID admin ( numeric ID )
-EXCHANGE=binance         # "binance" atau "hyperliquid"
-TESTNET_MODE=false       # true untuk testnet (Binance Testnet)
-```
+# === Telegram ===
+BOT_TOKEN=*** Token dari @BotFather
+ADMIN_CHAT_ID=       # Numeric chat ID kamu (dari @userinfobot)
 
-**API Keys:**
+# === Exchange ===
+EXCHANGE=binance     # "binance" atau "hyperliquid"
+TESTNET_MODE=false   # true untuk Binance Testnet
 
-| Exchange | Yang Dibutuhkan | Tidak Perlu |
-|----------|----------------|-------------|
-| Binance Futures | API Key + Secret | Wallet address |
-| Hyperliquid | API Key + Secret | Wallet address, seed phrase |
+# === API Keys (hanya untuk live mode) ===
+# Binance Futures: API Key + Secret
+# Hyperliquid: API Key + Secret (TIDAK perlu wallet address)
 
-> ⚠️ **JANGAN commit .env ke Git.** File ini sudah di .gitignore.
+# === LLM (opsional — untuk Smart Mode) ===
+LLM_PROVIDER=openrouter
+LLM_API_KEY=
+LLM_MODEL=anthropic/claude-sonnet-4
+
+> ⚠️ **JANGAN pernah commit `.env` ke Git.** File ini sudah di `.gitignore`.
 
 ---
 
 ## 📱 Menu Telegram
 
-### Cara Kerja
+Navigasi: `page:NAMAPAGE` (contoh: `page:status`, `page:settings`)
 
-Semua interaksi via **InlineKeyboardMarkup** (tombol di dalam message). Tidak ada ReplyKeyboard.
+### 12 Halaman Menu
 
-Format callback: `prefix:action:value`
-- `page:XXX` — navigasi halaman
-- `set:XXX` — ubah settings
-- `action:XXX` — eksekusi trading
-- `strat:XXX` — manajemen strategi
+| Halaman | Fungsi |
+|---------|--------|
+| 🏠 Main | Dashboard utama — semua navigasi di sini |
+| 📊 Status | Mode, balance, open positions, win rate 24h, LLM on/off |
+| 💰 Balance | Dry run balance / live balance dari exchange |
+| 📋 Positions | Semua posisi terbuka (symbol, direction, size, PnL, TP/SL) |
+| 📜 History | Log trade dengan pagination, filter, delete |
+| ⚙️ Strategy | Toggle 11 strategi ON/OFF |
+| 📡 Monitor | Status scanner + strategi aktif |
+| 🔧 Settings | Cycle interval, max orders, max positions, daily loss limit |
+| 👛 Wallet | Input API Key + Secret, test connection |
+| 🔴 Mode | Pilih Dry Run / Live |
+| 🤖 Smart | Aktifkan LLM Smart Mode |
+| ❓ Help | bantuan |
+
+### Navigasi
+
+```
+🏠 Main
+├── [📊 Status]   → page:status
+├── [⚙️ Strategy] → page:strategy
+├── [⚡ Quick]    → page:quick
+├── [💰 Balance] → page:balance
+├── [📡 Monitor] → page:monitor
+├── [🔧 Settings] → page:settings
+└── [❓ Help]    → page:help
+```
+
+### Perintah CLI
+
+| Command | Fungsi |
+|---------|--------|
+| `/start` | Start bot, show main menu |
+| `/stop` | Stop trading |
+| `/newdryrun [balance]` | Reset dry run dengan balance tertentu |
+| `/status` | Quick status |
+| `/balance` | Show balance page |
 
 ---
 
-### Halaman Menu
+## 📈 Strategi Trading
 
-#### 🏠 Main Page
-```
-Trador v2
-[Status] [Strategy] [Quick]
-[Balance] [Monitor] [Settings]
-[Help]
-```
-Akses semua halaman. Status hijau = bot hidup.
+Default: semua 11 strategi **AKTIF**. Tap untuk toggle ON/OFF.
 
-#### 📊 Status Page
-- Mode (dry_run / live)
-- Balance saat ini + PnL
-- Open positions count
-- Win rate 24h (dari trade_log, bukan perf tracker)
-- Strategi aktif + jumlah
-- Wallet connected / disconnected
-
-#### 💰 Balance Page
-- **Dry Run**: Balance simulasi, reset ke $100
-- **Live**: Balance dari wallet exchange (sync otomatis)
-- PnL since start, PnL 24h
-
-#### 📋 Positions Page
-- Semua posisi terbuka (symbol, direction, size, entry, PnL, TP/SL)
-- Tombol close per posisi
-
-#### 📜 History Page
-- Log trade dengan pagination (5 per halaman)
-- Filter: ALL / DRY RUN / LIVE
-- Hapus history: 7 days / 30 days / ALL
-
-#### ⚙️ Strategy Page
-- 11 strategi — tap untuk toggle ON/OFF
-- Default: semua ON
-- Indikator ✅ = aktif
-
-#### 📡 Monitor Page
-- Status scanner (whale, liquidation, orderbook, volume_profile, funding, smc)
-- Strategi yang aktif (dari StrategyLoader)
-- Cycle interval + last scan time
-
-#### 🔧 Settings Page
-
-| Parameter | Deskripsi | Default |
-|-----------|-----------|---------|
-| LLM Smart | Position sizing via Hermes LLM | OFF |
-| Cycle Interval | Detik antar scan cycle | 15s |
-| Max Orders/Cycle | Maksimal order per cycle | 2 |
-| Max Positions | Total posisi aktif bersamaan | 5 |
-| Daily Loss Limit | Maksimal loss per hari ($) | $50 |
-| Symbol Pool | Coin yang di-scan | 30 coins |
-
-##### 🪙 Symbol Pool (Coin Filter)
-- Tap `🪙 Coins` → halaman coin pool
-- **A-Z Letter Filter**: tap huruf untuk filter coin berdasarkan huruf awal
-- **Tap coin** untuk toggle enable/disable
-- Data coin: real dari Binance Futures (top 50 USDT pairs by volume)
-- Fallback ke 30 coin static jika API gagal
-
-#### 👛 Wallet Page
-- Pilih exchange: Binance Futures / Hyperliquid
-- Input API Key + Secret
-- Test connection → konfirmasi "✅ Connected" atau "❌ Failed"
-
-#### 🔴 Mode Page
-- **Dry Run**: Simulasi, tidak perlu API key (bisa test tanpa risiko)
-- **Live**: Real trading, butuh wallet connected + API keys
-
----
-
-## 📈 Strategi
-
-Default: semua 11 strategi **AKTIF**.
-
-| ID | Nama | Deskripsi Singkat |
-|----|------|-------------------|
-| `whale_rider` | Whale Rider | Riding large wallet orders via funding rate anomalies |
+| ID | Nama | Deskripsi |
+|----|------|-----------|
+| `whale_rider` | Whale Rider | Ride large wallet orders via funding rate anomalies |
 | `funding_arbitrage` | Funding Arbitrage | Long/short funding rate spread capture |
 | `grid_hunter` | Grid Hunter | Grid orders di sideways market |
 | `scalp_rapid` | Scalp Rapid | Quick scalp di high-volume spikes |
@@ -248,273 +251,197 @@ Default: semua 11 strategi **AKTIF**.
 | `liquidity_sweep` | Liquidity Sweep | Liquidity pools sweep exploitation |
 | `momentum_ema` | Momentum EMA Crossover | EMA crossover untuk momentum entry |
 
+### Edit Strategy Tanpa Restart
+Strategy files di `strategies/*.json` bisa diedit langsung — StrategyLoader auto-reload setiap perubahan (hot-reload). Tidak perlu restart bot.
+
+### Parameter Strategy (per strategy JSON)
+```json
+{
+  "enabled": true,
+  "leverage": 10,
+  "position_size": 0.10,
+  "stop_loss_pct": 1.5,
+  "take_profit_pct": 3.0,
+  "min_score": 65,
+  "max_daily_trades": 5
+}
+```
+
 ---
 
-## 🔍 Scanners
+## 🔍 6 Scanner Market
 
-6 scanner berjalan parallel di setiap cycle:
+Semua scanner pakai **public API Binance** — tidak butuh API key. Berjalan parallel di setiap scan cycle.
 
 | Scanner | Data Source | Fungsi |
 |---------|-------------|--------|
-| `whale` | Public Binance OHLCV | Detect whale activity |
-| `liquidation` | Public Binance orderbook | Liquidated positions |
-| `orderbook` | Public Binance depth | Order book imbalance |
-| `volume_profile` | Public Binance klines | Volume profile analysis |
-| `funding` | Public Binance funding rate | Funding rate anomalies |
-| `smc` | Public Binance OHLCV + orderbook | Smart Money Concept signals |
+| `whale` | OHLCV 15m/1h | Volume spike detection — identify large player activity |
+| `liquidation` | Orderbook depth | Detect recent liquidations di price level |
+| `orderbook` | Depth data | Order book imbalance — buy/sell pressure |
+| `volume_profile` | Klines | POC (Point of Control) + volume nodes |
+| `funding` | Funding rate API | Funding rate anomaly vs spot vs perp spread |
+| `smc` | OHLCV + orderbook | Smart Money Concept — order blocks, FVG, liquidity sweep |
 
-> Semua scanner menggunakan **public API** — tidak butuh API key.
+### MTF Scanner
+MTF Analyzer run di setiap scan cycle untuk 3 timeframe (15m/1h/4h):
+- **Bullish**: semua timeframe searah
+- **Bearish**: semua timeframe berlawanan
+- **Conflicting**: timeframe不一致 → skip (no trade)
+
+---
+
+## 🛡️ Risk Engine
+
+Risk engine terdiri dari 5 komponen yang bekerja sama untuk proteksi portfolio.
+
+### 1. RiskGuard — Pre-Trade Validation
+
+10-layer check sebelum setiap order:
+1. trading_enabled flag check
+2. Daily loss limit check
+3. Max concurrent positions check
+4. Symbol whitelist/blacklist
+5. Volatility regime check
+6. Kelly size validation
+7. Balance sufficiency check
+8. Position size check (≤20% per trade)
+9. Leverage check (≤20x)
+10. Order timing (min interval between trades)
+
+**Circuit Breaker:** Jika daily loss hit limit, `trading_enabled=False` sampai next day reset.
+
+**Kill/Resume:** Telegram UI → Settings → 🛡️ Risk Engine → 🛑 Kill Switch / ▶️ Resume Trading.
+
+### 2. KellySizer — Dynamic Position Sizing
+
+Kelly Criterion dengan 8 adjustment factors:
+
+| Factor | Penjelasan |
+|--------|------------|
+| `win_rate` | Win rate dari trade history |
+| `avg_win` | Average win amount ($) |
+| `avg_loss` | Average loss amount ($) |
+| `kelly_fraction` | Kelly fraction (default 0.5 = half-Kelly) |
+| `max_kelly_pct` | Maximum Kelly% (default 20%) |
+| `win_streak` | Current win streak (bonus) |
+| `loss_streak` | Current loss streak (penalty) |
+| `confidence` | Historical data sufficiency (0-1) |
+
+Output: `current_kelly` (0-20% dari balance) dan `confidence` (0-1).
+
+### 3. VaRCalc — Value at Risk
+
+Portfolio risk metrics:
+
+| Metric | Penjelasan |
+|--------|------------|
+| `var_95` | Value at Risk 95% — max expected loss dalam 1 hari |
+| `cvar_95` | Conditional VaR — average loss GIVEN breach |
+| `worst_case` | Worst single position loss |
+| `portfolio_exposure` | Total exposure across all positions |
+
+Updated setiap scan cycle dari trade history + current positions.
+
+### 4. OBIAnalyzer — Order Flow Imbalance
+
+Analisa order flow dari orderbook depth untuk eksekusi quality:
+
+| Signal | Penjelasan |
+|--------|------------|
+| `bid_ask_imbalance` | Buy/sell pressure ratio |
+| `price_impact` | Estimated price impact |
+| `order_book_depth` | Liquidity depth |
+| `execution_quality` | Estimated fill quality |
+
+Digunakan untuk reject poor execution pada saat high volatility.
+
+### 5. StressTest — Scenario Testing
+
+5 scenario untuk simulate worst-case losses:
+
+| Scenario | Deskripsi |
+|----------|-----------|
+| 🔥 Flash Crash | Harga drop 15% dalam 1 jam |
+| 📉 Black Swan | Harga drop 30% dalam 1 hari |
+| 🌊 High Vol | Volatilitas 3x normal |
+| 📰 News Gap | Gap down 10% overnight |
+| 🔄 Sideway Chop | Whipsaw 5x dalam 1 hari |
+
+Setiap scenario output:
+- Estimated loss ($)
+- Severity (🟢 Low / 🟡 Medium / 🟠 High / 🔴 Critical)
+- Recommendations (action items)
+
+### Risk Engine UI (Settings → 🛡️ Risk Engine)
+
+Halaman Telegram khusus untuk monitoring risk:
+
+```
+🛡️ Risk Engine
+
+📊 Volatility: [NORMAL]  size: 1.0x
+📈 Kelly: 15.2%  confidence: 72%
+📉 VaR (95%): $85.20
+📅 Daily PnL: +$12.50
+💼 Positions: 3 open
+
+🛑 Kill Switch    ▶️ Resume Trading
+💪 Stress Test    🔄 Reset Daily
+```
 
 ---
 
 ## 🔄 Mode Trading
 
 ### Dry Run (Simulasi)
-- Balance simulated: $100 default
-- Tidak ada order real
-- Cocok untuk testing strategi
+- Balance virtual: $100 default
+- Tidak ada order real — semua simulate
+- Cocok untuk testing strategi + verify bot behavior
+- Reset balance: Balance page → 🔄 Reset Dry Run → $100
 
 ### Live (Real)
-- Balance dari wallet exchange (Binance Futures / Hyperliquid)
-- Order real被执行
-- ⚠️ Risk: real money involved
+- Balance sync dari exchange API (Binance Futures / Hyperliquid)
+- Order real dieksekusi
+- ⚠️ Risk tinggi — gunakan uang yang siap kehilangan
 
----
-
-## 👛 Wallet Connect
-
-### Binance Futures
-```
-1. Buka Binance → API Management
-2. Buat API Key (Futures enabled)
-3. Input Key + Secret di Wallet page
-4. Test Connection
-```
-
-### Hyperliquid
-```
-1. Buka Hyperliquid → API
-2. Buat API Key
-3. Input Key + Secret (no wallet address needed)
-4. Test Connection
-```
-
-> Hyperliquid **tidak butuh wallet address** — hanya API key + secret.
-
----
-
-## 🤖 Hermes Self-Improve
-
-Hermes Agent = **self-improvement engine** untuk Trador. Fokus aja ke improvement, tidak ikut campur execution.
-
-**Prinsip:**
-- ✅ Edit strategy YAML files langsung (leverage, position size, SL/TP params)
-- ✅ Analisa win rate per strategi → adjust params
-- ✅ Identify losing strategies → reduce exposure
-- ❌ TIDAK interfere reasoning/eksekusi trade
-- ❌ TIDAK buka/tutup posisi
-- ❌ TIDAK gunakan LLM untuk trading analysis (LLM only untuk improvement saat perlu)
-
-**LLM separation:**
-- LLM calls = ONLY untuk self-improvement tasks
-- Trading reasoning = tanggung jawab Trador sendiri
-- Memory Hermes = bersih, fokus ke improvement lessons
-
-**Arsitektur:**
-```
-┌─────────────────────────────────────────────────────────┐
-│  HERMES AGENT (self-improvement only)                   │
-│  • Baca trade history │
-│  • Edit strategy YAML files langsung │
-│  • Simpan improvement lessons                          │
-│  • TIDAK gunakan LLM untuk trading decisions │
-└──────────────────┬──────────────────────────────────────┘
-                   ↓ edit YAML langsung
-         src/strategy/*.yaml
-                   │
-                   ↓ (auto-reload)
- StrategyLoader.reload()
- │
-                   ↓
-         Trador auto-read updated params
-```
-
----
-
-### 📚 Tutor: Cara Aktifkan Hermes Self-Improve
-
-**1. Buat cron job (every 15 menit):**
-```bash
-hermes cron create \
-  --name "trador-self-improve" \
-  --schedule "every 15m" \
-  --skill "trador-admin" \
-  --prompt "You are the Trador self-improvement agent. Your job: every 15 minutes, assess the Trador trading bot... [full prompt lihat bawah]" \
-  --deliver "origin"
-```
-
-**2. Lihat semua cron job:**
-```bash
-hermes cron list
-```
-
-**3. Lihat detail cron job tertentu:**
-```bash
-hermes cron list | grep trador
-```
-
-**4. Hapus cron job:**
-```bash
-hermes cron remove <job_id>
-```
-
-**5. Pause/resume cron job:**
-```bash
-hermes cron pause <job_id>
-hermes cron resume <job_id>
-```
-
----
-
-### 📝 Prompt untuk Cron Job Hermes Self-Improve
-
-Gunakan prompt ini saat membuat cron job:
-
-```
-You are the Trador self-improvement agent. Your job: every 15 minutes, assess the Trador trading bot state and directly edit strategy YAML files if improvements are found.
-
-## Your role
-- Hermes = self-improvement engine (focused, memory-clean)
-- Trador = executor body (reasoning + execution separated)
-- You NEVER touch execution — only improve strategy params
-
-## Files (use environment variables or find via find command)
-- Trade history: find with `find ~ -name "trade_history.json" -path "*/trador/*" 2>/dev/null | head -1`
-- Strategy YAML: find with `find ~ -name "*.yaml" -path "*/trador/strategy/*" 2>/dev/null`
-- State: find with `find ~ -name "state.json" -path "*/trador/*" 2>/dev/null | head -1`
-
-## Your task each run
-1. Find trador installation directory via find command
-2. Read trade history from memory/trade_history.json
-3. Calculate win rate per strategy
-4. Identify underperforming strategies (WR < 40% in last 20 trades)
-5. If found: directly edit the strategy YAML file with adjustments
-6. Call StrategyLoader.reload() to apply changes
-7. Save improvement lesson to Hermes memory
-
-## Adjustment rules (HARD LIMITS)
-- Max leverage: 20x (never exceed)
-- Max SL (price%): 6% for 3x, 4% for 5x, 2% for 8x, 1.5% for 10x, 0.75% for 20x
-- Max TP (price%): 8% for 3x, 6% for 5x, 3% for 8x, 2% for 10x, 1% for 20x
-- Max position_size: 0.20 (20% of balance)
-- Min position_size: 0.02 (2% of balance)
-- Never change more than 20% in one adjustment
-
-## If no improvement needed: SILENT (no output)
-Only write to memory if you made an actual change.
-```
-
----
-
-### 📋 Cron Job Management Cheatsheet
-
-| Perintah | Fungsi |
-|---------|--------|
-| `hermes cron list` | Lihat semua cron job |
-| `hermes cron list \| grep trador` | Lihat cron job Trador saja |
-| `hermes cron remove <job_id>` | Hapus cron job |
-| `hermes cron pause <job_id>` | Pause cron job |
-| `hermes cron resume <job_id>` | Resume cron job |
-| `hermes cron run <job_id>` | Run sekarang (test) |
-
-**Contoh output saat Hermes improve:**
-```
-📊 Improved whale_rider: WR38% → reduced position_size 0.15→0.10, SL 1.0%→1.2%
-📊 Improved scalp_rapid: WR 35% → reduced leverage 10x→8x
-```
-
----
+**Mode switch:** Main menu → 🔴 Mode → pilih Dry Run / Live
 
 ---
 
 ## 📊 Backtesting
 
 ```bash
-cd src
-python3 -m backtesting.run
+cd /home/ubuntu/trador
+python3 -m src.backtesting.run --strategy whale_rider --symbol BTCUSDT --interval 1h --days 30
 ```
 
 **Output:**
-- Equity curve chart (PNG)
+- Equity curve PNG
 - Trade markers di chart
 - Drawdown fill
 - Sharpe Ratio, Sortino Ratio, Max Drawdown
 
-**Contoh:**
-```bash
-python3 -m backtesting.run --strategy whale_rider --symbol BTCUSDT --interval 1h --days 30
-```
-
 ---
 
-## ❓ FAQ
+## ⚠️ Persiapan Live Money
 
-### Q: Apakah 11 strategi bisa dipakai gratis?
-**A:** Ya. Semua strategi menggunakan **public Binance API** (`fapi.binance.com`). Tidak butuh API key untuk scanner/strategi. API key hanya diperlukan untuk **Live trading** (buka posisi real).
+**BOT INI BELUM SIAP UNTUK LIVE MONEY.**
 
-### Q: max_orders_per_cycle vs max_concurrent_positions bedanya?
-**A:**
-- `max_orders_per_cycle` = berapa kali bot boleh **buka posisi baru** tiap cycle scan
-- `max_concurrent_positions` = total **posisi aktif bersamaan** (belum ditutup/TP/SL)
+### Checklist sebelum live:
 
-Contoh: max_orders=2, max_pos=5
-→ Tiap 15 detik, bot boleh buka max 2 posisi baru
-→ Total tidak boleh lebih dari 5 posisi aktif
+- [ ] **Minimal 20+ dry-run trades** dengan win rate > 50%
+- [ ] **Profitability proven** — dry-run balance consistently growing
+- [ ] **API key tested** — rate limit, order execution latency, slippage verified
+- [ ] **Risk parameters tuned** — daily loss limit, max position size, leverage sesuai comfort
+- [ ] **MTF analysis verified** — false breakout rate rendah di live conditions
 
-### Q: Cycle interval itu apa?
-**A:** Detik antar scan cycle. Default 15s.
+### Current Dry Run Track Record:
+- ❌ 6/6 losing trades (100% loss rate)
+- ❌ Balance $100 → $96 (negative return)
+- ❌ API key belum tested di real execution
 
-**Cycle flow:**
-```
-1. Fetch price semua coin di pool
-2. Jalankan 11 strategi → score per coin
-3. Top score + filter risk → buka posisi
-4. Check TP/SL semua posisi terbuka
-5. Sleep cycle_interval
-```
-
-Semakin kecil interval = semakin responsif tapi **lebih banyak API calls**.
-
-### Q: Symbol pool itu apa?
-**A:** Daftar coin yang di-scan tiap cycle. Default 30 coins dari Binance Futures top volume.
-
-- Tap `🪙 Coins` di Settings untuk customize
-- Filter huruf A-Z untuk find coin spesifik
-- ✅ = enabled (di-scan), ❌ = disabled
-
-### Q: Kenapa Status menunjukkan 0% Win Rate padahal sudah profit?
-**A:** Win Rate dihitung langsung dari `trade_log.json` (semua trade records). Jika kosong atau tidak ada trade, Win Rate = 0%. Bukan dari `performance.json` yang tidak pernah di-update.
-
-### Q: Bagaimana cara reset dry run balance?
-**A:** Balance page → `🔄 Reset Dry Run → $100`
-
-### Q: Live balance tidak sync?
-**A:** Pastikan wallet sudah connected (Wallet page → Test Connection). Live balance diambil langsung dari exchange API, bukan dari input manual.
-
-### Q: Bot tidak response saat diklik?
-**A:** 
-1. Cek bot alive: `pgrep -f "python3 -m src.main"`
-2. Restart: `pkill -f "python3 -m src.main" && python3 -m src.main`
-3. Cek logs: `tail -20 logs/trador.log`
-
-### Q: Hyperliquid butuh wallet address?
-**A:** Tidak. Hyperliquid hanya butuh **API Key + Secret**. Tidak ada wallet address atau seed phrase.
-
-### Q: Daily loss limit dalam apa?
-**A:** Dalam **dollar ($)** — bukan persen. Default $50/hari. Jika total PnL negatif mencapai -$50, bot akan stop trading sampai hari berikutnya.
-
-### Q: Bagaimana cara hapus semua history?
-**A:** History page → 🔽 Filter → Pilih **ALL** → 🗑️ Delete → Pilih rentang (7 days / 30 days / ALL data)
+### Kapan boleh mulai live:
+Hanya setelah dry-run menunjukkan win rate > 50% dan positive return minimal 30 trades.
 
 ---
 
@@ -525,16 +452,15 @@ Semakin kecil interval = semakin responsif tapi **lebih banyak API calls**.
 # Cek process
 pgrep -f "python3 -m src.main"
 
-# Cek logs
-tail -20 logs/trador.log
+# Ceck logs
+tail -30 logs/trador.log
 
 # Restart
-pkill -f "python3 -m src.main"
-python3 -m src.main
+pkill -f "python3 -m src.main" && python3 -m src.main
 ```
 
 ### "Message is not modified" di logs
-Normal — bot mencoba render halaman yang isinya sama persis. Sudah di-handle gracefully, tidak mempengaruhi fungsi.
+Normal — bot mencoba render halaman yang isinya sama. Sudah di-handle gracefully, tidak mempengaruhi fungsi.
 
 ### Wallet connection failed
 1. Cek API Key + Secret benar
@@ -542,30 +468,24 @@ Normal — bot mencoba render halaman yang isinya sama persis. Sudah di-handle g
 3. Hyperliquid: hanya API Key + Secret, tidak perlu wallet address
 4. Cek network connectivity dari server
 
+### Scanner tidak jalan
+- Scanner berjalan otomatis saat trading enabled
+- Cek Monitor page untuk status scanner
+- Semua scanner pakai public API — tidak butuh API key
+
 ### Balance tidak update di Live mode
 - Pastikan wallet connected (Wallet page)
 - Balance sync dari exchange API setiap kali halaman dibuka
 - Refresh dengan klik Balance di menu
 
-### Strategi tidak sync dengan yang dicentang
+### Strategy tidak sync dengan yang dicentang
 - Status page membaca dari `StrategyLoader.list_active_ids()` — source of truth
-- Monitor page juga membaca dari StrategyLoader
-- Jika tidak sync, restart bot: `pkill -f "python3 -m src.main" && python3 -m src.main`
+- Jika tidak sync, restart bot
 
-### Scanner tidak jalan
-- Scanner berjalan otomatis saat trading enabled
-- Cek Monitor page untuk status scanner
-- Semua scanner menggunakan public API — tidak butuh API key
-
-### API rate limit
-- Default cycle 15s — sudah aman untuk Binance public API
-- Jika limit tercapai, bot会自动 backoff
-- Hyperliquid: lebih toleran untuk rate limit
-
-### Coin pool hanya show A-I
-- Pastikan halaman coin pool di-render dengan benar
-- Huruf di-split jadi 4 rows (A-G, H-N, O-U, V-Z)
-- Jika ada letter tanpa coin, tampil sebagai `·` (disabled)
+### Bot terminated (exit code 143)
+- SIGTERM — bot menerima kill signal, bukan crash
+- Restart: `python3 -m src.main`
+- Check logs untuk verify clean startup
 
 ---
 
@@ -573,16 +493,26 @@ Normal — bot mencoba render halaman yang isinya sama persis. Sudah di-handle g
 
 ```
 trador/
-├── .env                  # Credentials (JANGAN commit!)
+├── .env                  # Credentials (JANGAN COMMIT!)
 ├── .env.example          # Template
 ├── requirements.txt
-├── README.md
-├── SPEC.md
+├── README.md             # Dokumen utama (INI)
+├── SPEC.md               # Technical specification
 ├── src/
 │   ├── main.py           # Entry point
 │   ├── trading/
-│   │   ├── engine.py     # Core trading engine
-│   │   └── auto_trader.py # 11-strategy auto trader
+│   │   ├── auto_trader.py   # Scan cycle + execution
+│   │   ├── engine.py        # Core engine
+│   │   ├── risk_guard.py    # Pre-trade validation (520 lines)
+│   │   ├── kelly_sizer.py   # Dynamic position sizing (389 lines)
+│   │   ├── var_calc.py      # VaR/CVaR calculator (259 lines)
+│   │   ├── obi_analyzer.py  # Order flow imbalance (284 lines)
+│   │   ├── stress_test.py   # Scenario tester (408 lines)
+│   │   ├── mtf_analyzer.py  # Multi-timeframe (396 lines)
+│   │   ├── strategies.py    # Strategy scoring (466 lines)
+│   │   ├── rolling_buffer.py # Rolling stats (342 lines)
+│   │   ├── position_manager.py
+│   │   └── signals.py
 │   ├── scanners/
 │   │   ├── whale_scanner.py
 │   │   ├── liquidation_scanner.py
@@ -591,57 +521,40 @@ trador/
 │   │   ├── funding_scanner.py
 │   │   └── smc_scanner.py
 │   ├── strategy/
-│   │   ├── loader.py     # StrategyLoader — hot-reload
-│   │   └── *.yaml        # Strategy configs
+│   │   └── loader.py     # StrategyLoader — hot-reload
 │   ├── tg_bot/
 │   │   ├── menu/
-│   │   │   ├── __init__.py      # MenuRouter + handlers
-│   │   │   ├── core.py          # MenuPage + MenuNavigator
-│   │   │   └── pages/
-│   │   │       ├── main_page.py
-│   │   │       ├── status_page.py
-│   │   │       ├── balance_page.py
-│   │   │       ├── positions_page.py
-│   │   │       ├── history_page.py
-│   │   │       ├── strategy_page.py
-│   │   │       ├── monitor_page.py
-│   │   │       ├── settings_page.py
-│   │   │       ├── wallet_page.py
-│   │   │       ├── mode_page.py
-│   │   │       ├── smart_page.py
-│   │   │       ├── quick_page.py
-│   │   │       └── help_page.py
-│   │   └── handlers/     # Legacy handlers (deprecated)
+│   │   │   ├── __init__.py   # MenuRouter + all handlers
+│   │   │   └── pages/        # 12 page classes
+│   │   └── handlers/         # Legacy handlers
 │   ├── memory/
 │   │   ├── state.py      # StateManager
 │   │   ├── trade_log.py  # TradeLog
-│   │   └── performance.py # PerformanceTracker
+│   │   └── performance.py
 │   ├── llm/
-│   │   └── scorer.py     # LLM scoring
+│   │   └── scorer.py
 │   ├── backtesting/
-│   │   └── run.py        # Backtesting CLI
+│   │   └── run.py
 │   └── utils/
 │       └── logger.py
-├── memory/               # Runtime data
+├── strategies/           # Strategy JSON files (hot-reload)
+│   ├── whale_rider.json
+│   ├── funding_arbitrage.json
+│   └── ...
+├── memory/               # Runtime data (per-machine)
 │   ├── state.json
 │   ├── trade_history.json
-│   ├── performance.json
-│   ├── dry_run/
-│   └── live/
-├── shared/                # Hermes Comm (JSON reports/suggestions)
-│   ├── trador_reports/    # ← Trador writes (trades.json, status.json)
-│   └── hermes_suggestions/ # ← Hermes writes (pending/ suggestions)
-│       └── pending/
-├── strategies/           # Strategy YAML files
-│   ├── whale_rider.yaml
-│   └── ...
-└── logs/
-    └── trador.log
+│   └── performance.json
+├── shared/               # Hermes Comm (JSON reports)
+├── logs/
+│   └── trador.log
+└── backtest_results/
+    └── *.png, *.json
 ```
 
 ---
 
-## 📌 Commands
+## 📌 Command Reference
 
 | Command | Fungsi |
 |---------|--------|
@@ -655,4 +568,5 @@ trador/
 ---
 
 **Last updated:** June 2026
-**Version:** v2 (inline keyboard menu system)
+**Version:** v3 (with integrated Risk Engine)
+**Status:** DRY RUN ONLY — Not ready for live money
