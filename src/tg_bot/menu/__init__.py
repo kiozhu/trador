@@ -12,18 +12,20 @@ from .pages import (
     MainPage, StatusPage, HelpPage, PositionsPage, StrategyPage,
     HistoryPage, BalancePage, WalletPage, SmartPage, QuickPage,
     ModePage, DirectionPage, MonitorPage, SettingsPage, RiskPage,
+    RiskConfigPage,
 )
 
 
 class MenuRouter:
     """Wires ALL inline callback queries to page navigation or action handlers."""
 
-    def __init__(self, state_mgr, perf, exchange, trade_log=None, loader=None):
+    def __init__(self, state_mgr, perf, exchange, trade_log=None, loader=None, trador=None):
         self.state_mgr = state_mgr
         self.perf = perf
-        self.exchange = exchange
-        self.trade_log = trade_log or _get_trade_log()
+        self.engine = exchange
+        self.trade_log = trade_log
         self.loader = loader
+        self.trador = trador  # reference to main Trador instance for LLM reload
 
         # ── All pages registered in nav ─────────────────────────────────────────
         pages = {
@@ -34,14 +36,15 @@ class MenuRouter:
             "strategy": StrategyPage(loader),
             "history": HistoryPage(trade_log),
             "balance": BalancePage(state_mgr, exchange, trade_log),
-            "wallet": WalletPage(),
+            "wallet": WalletPage(state_mgr),
             "smart": SmartPage(state_mgr, loader),
             "quick": QuickPage(state_mgr, loader),
             "mode": ModePage(state_mgr),
             # Direction page — hidden (direction always "both" internally)
             "monitor": MonitorPage(state_mgr, trade_log, perf, loader),
             "settings": SettingsPage(state_mgr),
-            "risk": RiskPage(state_mgr),
+            "risk": RiskPage(state_mgr, None),  # auto_trader set post-startup via set_auto_trader
+            "risk_config": RiskConfigPage(state_mgr),
         }
         self.nav = MenuNavigator(pages)
 
@@ -126,16 +129,41 @@ class MenuRouter:
             return
 
         if data == "action:stop_close_all":
-            # Stop + close all live positions
+            # Stop + close ALL live positions AND cancel all open orders
             self.state_mgr.set("trading_enabled", False)
             self.state_mgr.set_status("stopped")
+
+            # Cancel ALL open orders on exchange
+            if self.engine:
+                try:
+                    result = await self.engine.cancel_all_orders()
+                    log.info("Cancelled all orders: %s", result)
+                except Exception as e:
+                    log.error("Cancel all orders failed: %s", e)
+
+            # Close ALL open positions on exchange
+            if self.engine:
+                mode = state.get("mode", "live")
+                positions = self.trade_log.get_active(mode=mode) if self.trade_log else []
+                for t in positions:
+                    sym = t.get("symbol", "")
+                    side = t.get("side", "")
+                    if sym and side:
+                        try:
+                            close_result = await self.engine.close_position(sym, side)
+                            log.info("Closed position %s %s: %s", sym, side, close_result)
+                        except Exception as e:
+                            log.error("Close position %s %s failed: %s", sym, side, e)
+
+            # Update local trade log
             if self.trade_log:
                 for t in self.trade_log.get_active(mode="live"):
                     t["status"] = "closed"
                     t["exit_reason"] = "manual_stop"
                     t["close_timestamp"] = datetime.now(timezone.utc).isoformat()
                     self.trade_log.add(t)
-            await query.answer("🔴 All positions closed", show_alert=True)
+
+            await query.answer("🔴 All positions closed + orders cancelled", show_alert=True)
             await self._navigate_to(update, "main")
             return
 
@@ -286,8 +314,29 @@ class MenuRouter:
             strategy_id = data.split(":")[1]
             if self.loader:
                 strategy = self.loader.get(strategy_id)
-                text = f"📊 {strategy.get('name', strategy_id)}\n\n_Coming soon: performance stats_"
-                await query.answer("Performance", show_alert=False)
+                name = strategy.get("name", strategy_id) if strategy else strategy_id
+
+                # Get performance from perf tracker
+                perf_24h = {"trades": 0, "win_rate": 0, "pnl_pct": 0, "pnl_usd": 0}
+                perf_7d = {"trades": 0, "win_rate": 0, "pnl_pct": 0, "pnl_usd": 0}
+                if self.perf:
+                    try:
+                        perf_data = self.perf.get("dry_run")
+                        perf_24h = perf_data.get("24h", perf_24h)
+                        perf_7d = perf_data.get("7d", perf_7d)
+                    except Exception:
+                        pass
+
+                lines = [
+                    f"📊 {name}",
+                    "",
+                    f"24h | Trades: {perf_24h['trades']} | Win: {perf_24h['win_rate']:.1f}% | PnL: {perf_24h['pnl_pct']:+.1f}% (${perf_24h['pnl_usd']:+.2f})",
+                    f"7d  | Trades: {perf_7d['trades']}  | Win: {perf_7d['win_rate']:.1f}% | PnL: {perf_7d['pnl_pct']:+.1f}% (${perf_7d['pnl_usd']:+.2f})",
+                    "",
+                    "◀️ Back untuk kembali ke daftar strategy.",
+                ]
+                text = "\n".join(lines)
+                await query.answer("📊 Performance loaded", show_alert=False)
                 await query.edit_message_text(text, parse_mode=None)
             return
 
@@ -452,6 +501,34 @@ class MenuRouter:
             file_path = self.trade_log._file("dry_run")
             atomic_write_json(file_path, {"trades": []})
             msg = "🔄 Dry run reset — balance: $100"
+            return_page = "balance"
+
+        # ── Balance page: sync live balance from Binance ───────────────────
+        elif key == "sync_live_balance":
+            state = self.state_mgr.get()
+            api_key = state.get("wallet_api_key", "")
+            api_secret = state.get("wallet_api_secret", "")
+
+            if not api_key or not api_secret:
+                await query.answer("❌ Wallet belum terhubung", show_alert=True)
+                return
+
+            await query.answer("🔄 Syncing balance...", show_alert=False)
+            result = _fetch_binance_live_balance(api_key, api_secret)
+            if result["success"]:
+                self.state_mgr.set("live_balance", result["total"])
+                if not state.get("live_initial_balance"):
+                    self.state_mgr.set("live_initial_balance", result["total"])
+                msg = (
+                    f"✅ Balance synced!\n\n"
+                    f"USDT: ${result['total']:.6f}\n"
+                    f"Free: ${result['free']:.6f}\n"
+                    f"Positions: {result['positions']}\n"
+                    f"BTC: ${result['btc_price']:,.2f}"
+                )
+            else:
+                msg = f"❌ Sync failed: {result.get('error', 'Unknown')}"
+            await query.answer(msg.split("\n")[0], show_alert=True)
             return_page = "balance"
 
         # ── Balance page: reset live → $0 ─────────────────────────────────
@@ -667,11 +744,52 @@ class MenuRouter:
             from .pages import LLM_PROVIDERS
             if provider_key in LLM_PROVIDERS:
                 info = LLM_PROVIDERS[provider_key]
+                self.state_mgr.set("llm_provider", provider_key)
                 self.state_mgr.set("llm_base_url", info["base_url"])
                 self.state_mgr.set("llm_model", info["model_default"])
                 await query.answer(f"✅ Provider: {info['name']}", show_alert=True)
             else:
                 await query.answer("❌ Unknown provider", show_alert=True)
+            return
+
+        elif key == "llm_base_url":
+            # Ask user to input custom base URL
+            self.state_mgr.set("pending_input", "llm_base_url")
+            self.state_mgr.set("llm_provider", "custom")  # mark as custom
+            await query.answer()
+            await query.edit_message_text(
+                "🌐 Edit Base URL\n\n"
+                "Masukkan base URL lengkap untuk LLM API.\n"
+                "Contoh:\n"
+                "  https://api.minimax.io/v1\n"
+                "  https://api.openai.com/v1\n"
+                "  https://platform.xiaomimimo.com/v1\n\n"
+                "Ketik URL baru, atau ketik /cancel untuk batal.",
+                parse_mode=None,
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("◀️ Batal", callback_data="set:llm_page")
+                ]]),
+            )
+            return
+
+        elif key == "llm_model":
+            # Ask user to input custom model name
+            self.state_mgr.set("pending_input", "llm_model")
+            await query.answer()
+            await query.edit_message_text(
+                "🤖 Edit Model Name\n\n"
+                "Masukkan nama model yang digunakan.\n"
+                "Contoh:\n"
+                "  MiniMax-M3\n"
+                "  gpt-4o-mini\n"
+                "  MiniMax-2.5-Pro\n"
+                "  deepseek-chat\n\n"
+                "Ketik model name, atau ketik /cancel untuk batal.",
+                parse_mode=None,
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("◀️ Batal", callback_data="set:llm_page")
+                ]]),
+            )
             return
 
         elif key == "llm_test":
@@ -683,7 +801,7 @@ class MenuRouter:
             await query.answer("🧪 Testing LLM...", show_alert=False)
             try:
                 import httpx
-                model_name = state.get("llm_model") or "MiniMax-Text-01"
+                model_name = state.get("llm_model") or "MiniMax-M3"
                 headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
                 # MiniMax uses /v1/chat/completions at the end of base_url
                 url = f"{base_url.rstrip('/')}/v1/chat/completions"
@@ -772,7 +890,7 @@ class MenuRouter:
         elif key == "llm_key":
             await query.answer()
             await query.edit_message_text(
-                "*🔑 LLM API Key\n\n"
+                "🔑 LLM API Key\n\n"
                 "Kirim API Key kamu di chat ini.\n"
                 "Bisa pakai MiniMax, OpenAI, atau provider lain.\n"
                 "Ketik langsung di chat, jangan pake /.\n"
@@ -782,6 +900,7 @@ class MenuRouter:
                     [InlineKeyboardButton("◀️ Back", callback_data="page:settings")]
                 ]),
             )
+            self.state_mgr.set("pending_input", "llm_key")
             return
 
         # ── Risk kill / resume ────────────────────────────────────────────────────────
@@ -793,7 +912,33 @@ class MenuRouter:
 
         elif key == "risk_resume":
             self.state_mgr.set("_risk_action", "resume")
-            await query.answer("🟢 Trading resumed!", show_alert=True)
+            await query.answer("🟢 Trading diaktifkan kembali!", show_alert=True)
+            await self._navigate_to(update, "risk")
+            return
+
+        # ── Sideways mode toggle ──────────────────────────────────────────────────────
+        elif key == "sideways_off":
+            self.state_mgr.set("sideways_mode", False)
+            await query.answer("🟢 Trading di pasar sideways DIIZINKAN", show_alert=True)
+            await self._navigate_to(update, "risk")
+            return
+
+        elif key == "sideways_on":
+            self.state_mgr.set("sideways_mode", True)
+            await query.answer("🔴 Trading di pasar sideways DIBLOKIR", show_alert=True)
+            await self._navigate_to(update, "risk")
+            return
+
+        # ── Time filter toggle ─────────────────────────────────────────────────────
+        elif key == "time_filter_on":
+            self.state_mgr.set("time_filter_enabled", True)
+            await query.answer("🟢 L09 Time Filter AKTIF — WIB", show_alert=True)
+            await self._navigate_to(update, "risk")
+            return
+
+        elif key == "time_filter_off":
+            self.state_mgr.set("time_filter_enabled", False)
+            await query.answer("🔴 L09 Time Filter NONAKTIF", show_alert=True)
             await self._navigate_to(update, "risk")
             return
 
@@ -803,8 +948,9 @@ class MenuRouter:
             await query.answer("🧪 Running stress test...", show_alert=False)
 
             state = self.state_mgr.get()
-            balance = state.get("dry_run_balance", 10000)
             mode = state.get("mode", "dry_run")
+            balance_key = "dry_run_balance" if mode == "dry_run" else "live_balance"
+            balance = state.get(balance_key, 10000)
             open_pos = self.trade_log.get_active(mode=mode) if self.trade_log else []
             notional = balance * 0.2  # 20% exposure assumption
             leverage = 3
@@ -856,8 +1002,9 @@ class MenuRouter:
             from ...trading import stress_test as st_module
             scenario_key, scenario_label = scenario_map.get(scenario, ("black_swan", "Unknown"))
 
-            # Use the main run_stress_test function
-            report = st_module.run_stress_test(
+            # Run single selected scenario
+            report = st_module.run_single_scenario(
+                scenario=scenario,
                 prices=prices,
                 notional=notional,
                 position_entry=entry_price,
@@ -868,30 +1015,31 @@ class MenuRouter:
             # Format result for display
             overall = "✅ PASSED" if report["overall_passed"] else "🚨 FAILED"
             worst = report["worst_severity"].upper()
-            total_loss = report["total_estimated_loss_usd"]
-            worst_loss = report["worst_scenario_loss_usd"]
+            label = report.get("label", scenario_label)
 
             lines = [
-                f"🧪 STRESS TEST — {scenario_label}",
+                f"🧪 STRESS TEST — {label}",
                 "",
                 f"Overall  : {overall}",
-                f"Worst    : {worst}",
-                f"Total Est. Loss: ${total_loss:,.2f}",
-                f"Worst Scenario Loss: ${worst_loss:,.2f}",
+                f"Terburuk : {worst}",
+                f"Rugi Est: ${report['total_estimated_loss_usd']:,.2f}",
                 "",
-                "Scenarios:",
             ]
             for s in report["scenarios"]:
                 icon = "✅" if s["passed"] else "🚨"
                 lines.append(
-                    f"{icon} {s['scenario'].upper()} — Loss: {s['estimated_loss_pct']:.2f}% "
-                    f"(${s['estimated_loss_usd']:,.2f})"
+                    f"{icon} {s['scenario'].upper()} — "
+                    f"Rugi: {s['estimated_loss_pct']:.2f}% (${s['estimated_loss_usd']:,.2f})"
                 )
-                lines.append(f"   💡 {s['recommendation'][:80]}")
+                # Word-boundary cut at 55 chars
+                rec = s["recommendation"]
+                if len(rec) > 55:
+                    rec = rec[:55].rsplit(" ", 1)[0] + "…"
+                lines.append(f"   💡 {rec}")
 
             lines.append("")
             lines.append("◀️ Back untuk kembali ke Risk page.")
-            text = "".join(lines)
+            text = "\n".join(lines)
 
             keyboard = [[InlineKeyboardButton("◀️ Back", callback_data="page:risk")]]
             await query.edit_message_text(
@@ -928,6 +1076,122 @@ class MenuRouter:
                 pass  # silent — no actual change needed
             else:
                 log.error("handle_settings failed: %s", e)
+
+    # ── Risk config adjust callbacks (prefix adj:) ─────────────────────────────────
+    async def handle_adjust(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle +/- adjustment of RiskGuardConfig params (adj:*)."""
+        query = update.callback_query
+        data = query.data
+        if not data.startswith("adj:"):
+            return
+
+        # Short code map: adj:<code>_<delta>  e.g. adj:dlp_+0.5
+        SHORT_MAP = {
+            "mpsp": "max_position_size_pct",
+            "mpps": "max_positions_per_symbol",
+            "mcl":  "max_consecutive_losses",
+            "cm":   "cooldown_minutes",
+            "mbus": "min_balance_usd",
+            "ebus": "emergency_balance_usd",
+            "th":   "_time_hours_dummy",   # handled separately below
+            # ── Moved from settings ──────────────────────────────────
+            "ci":   "_cycle_interval",    # state_mgr, not risk_guard
+            "dll":  "_daily_loss_limit",  # state_mgr, not risk_guard
+            "mo":   "_max_orders",        # state_mgr, not risk_guard
+            "mp":   "_max_positions",    # state_mgr, not risk_guard
+        }
+
+        rest = data[4:]  # e.g. "dlp_+0.5"
+        parts = rest.rsplit("_", 1)
+        if len(parts) != 2:
+            await query.answer("Format error", show_alert=True)
+            return
+
+        code = parts[0]   # e.g. "dlp"
+        delta_str = parts[1]  # e.g. "+0.5"
+
+        try:
+            delta = float(delta_str)
+        except ValueError:
+            await query.answer("Delta parse error", show_alert=True)
+            return
+
+        config_key = SHORT_MAP.get(code)
+        if not config_key:
+            await query.answer(f"Unknown param: {code}", show_alert=True)
+            return
+
+        # ── State-mgr based params (moved from settings) ─────────────
+        if config_key in ("_cycle_interval", "_daily_loss_limit", "_max_orders", "_max_positions"):
+            state_key_map = {
+                "_cycle_interval":    ("cycle_interval",   15),
+                "_daily_loss_limit":  ("daily_loss_limit",  50),
+                "_max_orders":        ("max_orders_per_cycle", 2),
+                "_max_positions":     ("max_concurrent_positions", 5),
+            }
+            state_key, default_val = state_key_map[config_key]
+            if code == "ci":
+                delta_int = int(delta) if delta == int(delta) else delta
+                cur = self.state_mgr.get().get(state_key, default_val)
+                new_val = max(5, cur + delta_int)
+            elif code == "dll":
+                delta_int = int(delta) if delta == int(delta) else delta
+                cur = self.state_mgr.get().get(state_key, default_val)
+                new_val = max(5, cur + delta_int)
+            elif code == "mo":
+                delta_int = int(delta) if delta == int(delta) else delta
+                cur = self.state_mgr.get().get(state_key, default_val)
+                new_val = max(1, cur + delta_int)
+            elif code == "mp":
+                delta_int = int(delta) if delta == int(delta) else delta
+                cur = self.state_mgr.get().get(state_key, default_val)
+                new_val = max(1, cur + delta_int)
+            self.state_mgr.set(state_key, new_val)
+            await query.answer(f"{state_key} = {new_val}", show_alert=False)
+            await self._navigate_to(update, "risk")
+            return
+
+        # Get auto_trader early — needed for th case AND normal adjust
+        auto_trader = context.bot_data.get("auto_trader")
+        if not auto_trader or not auto_trader.risk_guard:
+            await query.answer("RiskGuard not available", show_alert=True)
+            return
+
+        # Special case: time hours (th) — modify no_trade_hours_wib list
+        if code == "th":
+            rg = auto_trader.risk_guard
+            current_hours = list(rg.config.no_trade_hours_wib or [])
+            if delta > 0 and len(current_hours) < 12:
+                next_hour = (max(current_hours) + 1) if current_hours else 7
+                if next_hour not in current_hours:
+                    current_hours.append(next_hour)
+                    current_hours.sort()
+            elif delta < 0 and current_hours:
+                if current_hours:
+                    current_hours.pop()
+            rg.set_config(no_trade_hours_wib=current_hours)
+            hour_str = ",".join(f"{h:02d}" for h in current_hours) or "none"
+            await query.answer(f"L09 blokir jam: {hour_str} WIB", show_alert=False)
+            await self._navigate_to(update, "risk")
+            return
+
+        cfg = auto_trader.risk_guard.config
+        if not hasattr(cfg, config_key):
+            await query.answer(f"Unknown config: {config_key}", show_alert=True)
+            return
+
+        old_val = getattr(cfg, config_key)
+        new_val = old_val + delta
+
+        # Clamp min to 0 for floats, 1 for ints
+        if isinstance(old_val, int):
+            new_val = max(1, new_val)
+        else:
+            new_val = max(0.0, new_val)
+
+        auto_trader.risk_guard.set_config(**{config_key: new_val})
+        await query.answer(f"{config_key} = {new_val}", show_alert=False)
+        await self._navigate_to(update, "risk")
 
     # ── Wallet callbacks (prefix wallet:) ─────────────────────────────────────────
     async def handle_wallet(self, update: Update, _: ContextTypes.DEFAULT_TYPE):
@@ -1015,7 +1279,7 @@ class MenuRouter:
             return
 
         if key == "test":
-            exchange = state.get("exchange", "binance")
+            exchange_type = state.get("exchange", "binance")
             api_key = state.get("wallet_api_key", "")
             api_secret = state.get("wallet_api_secret", "")
 
@@ -1025,28 +1289,61 @@ class MenuRouter:
 
             await query.answer("🧪 Testing connection...", show_alert=False)
             try:
-                if exchange == "binance":
+                if exchange_type == "binance":
                     import ccxt
-                    ex = ccxt.binance({"apiKey": api_key, "secret": api_secret,
-                                       "enableRateLimit": True, "options": {"defaultType": "future"}})
+                    ex = ccxt.binance({
+                        "apiKey": api_key,
+                        "secret": api_secret,
+                        "enableRateLimit": True,
+                        "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+                    })
                     bal = ex.fetch_balance({"type": "future"})
-                    total = bal.get("total", {}).get("USDT", 0)
+                    total_usdt = bal.get("USDT", {}).get("total", 0)
+                    free_usdt = bal.get("USDT", {}).get("free", 0)
+
+                    # Get mark price for context
+                    ticker = ex.fetch_ticker("BTC/USDT")
+                    btc_price = ticker.get("last", 0)
+
                     text = (
                         f"✅ Binance Connected!\n\n"
-                        f"USDT Balance: ${total:.2f}\n"
-                        f"Wallet: ✅ Connected"
+                        f"USDT Balance: ${total_usdt:.6f}\n"
+                        f"Free: ${free_usdt:.6f}\n"
+                        f"BTC price: ${btc_price:,.2f}\n\n"
+                        f"Wallet: ✅ Connected\n"
+                        f"Credentials: ✅ Valid\n"
+                        f"Futures: ✅ Enabled"
                     )
                     self.state_mgr.set("wallet_connected", True)
                 else:
-                    text = "*✅ Hyperliquid Connected!\n\nWallet: ✅ Connected"
+                    text = "⚡ Hyperliquid Connected!\n\nWallet: ✅ Connected"
+
                 await query.edit_message_text(text, parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]))
             except Exception as e:
                 await query.edit_message_text(
-                    f"❌ Connection Failed\n\n{e}\n\n"
+                    f"❌ Connection Failed\n\n{type(e).__name__}: {e}\n\n"
                     "Check API key/secret and try again.",
                     parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]))
+            return
+
+        if key == "reload":
+            await query.answer("🔄 Reloading engine...", show_alert=False)
+            try:
+                if hasattr(self, 'engine') and self.engine:
+                    self.engine.reload_from_env()
+                    text = (
+                        "✅ Engine Reloaded!\n\n"
+                        "Credentials updated from .env\n"
+                        "New API key/secret now active."
+                    )
+                else:
+                    text = "⚠️ Engine not available yet. Restart bot."
+            except Exception as e:
+                text = f"❌ Reload failed: {e}"
+            await query.edit_message_text(text, parse_mode=None,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]))
             return
 
         if key == "show_env":
@@ -1479,35 +1776,189 @@ async def _handle_text_input(update: Update, _: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Sent ${amount:.2f}\n\nNew balance: ${new_bal:.2f}", parse_mode=None)
         return
 
+    if pending == "llm_key":
+        api_key = text.strip()
+        if not api_key:
+            await update.message.reply_text("❌ API key kosong")
+            return
+
+        # Auto-detect provider and save to state + .env
+        router.state_mgr.set("llm_api_key", api_key)
+        router.state_mgr.set("pending_input", "")
+
+        if "sk-" in api_key:
+            provider = "openai"
+        elif len(api_key) > 64 and api_key.startswith("T4"):
+            provider = "binance-hmac"
+        else:
+            provider = "minimax"
+
+        if provider != "binance-hmac":
+            _sync_llm_key_to_env(provider, api_key)
+
+        masked = api_key[:6] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+        await update.message.reply_text(
+            f"✅ LLM API Key saved!\n\nProvider: {provider.upper()}\nKey: {masked}\n\nTest connection di menu Settings.",
+            parse_mode=None,
+        )
+        return
+
+    if pending == "llm_base_url":
+        url = text.strip().rstrip("/")
+        if not url.startswith("http"):
+            await update.message.reply_text("❌ URL harus mulai dengan http:// atau https://")
+            return
+        router.state_mgr.set("llm_base_url", url)
+        router.state_mgr.set("llm_provider", "custom")
+        router.state_mgr.set("pending_input", "")
+        await update.message.reply_text(f"✅ Base URL saved!\n\n{url}", parse_mode=None)
+        return
+
+    if pending == "llm_model":
+        model = text.strip()
+        if not model:
+            await update.message.reply_text("❌ Model name kosong")
+            return
+        router.state_mgr.set("llm_model", model)
+        router.state_mgr.set("pending_input", "")
+        await update.message.reply_text(f"✅ Model name saved!\n\nModel: {model}", parse_mode=None)
+        return
+
     if pending == "wallet_api_key":
         router.state_mgr.set("wallet_api_key", text)
         router.state_mgr.set("pending_input", "")
+        # Sync to .env + reload engine so TradingEngine picks up credentials immediately
+        _sync_binance_creds_to_env(api_key=text, api_secret=None)
+        try:
+            router.engine.reload_from_env()
+        except Exception:
+            pass
         await update.message.reply_text(f"✅ API Key saved!\n\n{text[:8]}...", parse_mode=None)
         return
 
     if pending == "wallet_api_secret":
         router.state_mgr.set("wallet_api_secret", text)
         router.state_mgr.set("pending_input", "")
-        await update.message.reply_text("*✅ API Secret saved!", parse_mode=None)
+        # Sync to .env + reload engine so TradingEngine picks up credentials immediately
+        _sync_binance_creds_to_env(api_key=None, api_secret=text)
+        try:
+            router.engine.reload_from_env()
+        except Exception:
+            pass
+        await update.message.reply_text("✅ API Secret saved!", parse_mode=None)
         return
 
-    if pending == "llm_key":
-        api_key = text.strip()
-        if not api_key:
-            await update.message.reply_text("❌ API key kosong")
-            return
-        router.state_mgr.set("llm_api_key", api_key)
-        router.state_mgr.set("pending_input", "")
-        await update.message.reply_text("🔑 API key tersimpan. Test connection di LLM Settings.")
+
+def _sync_binance_creds_to_env(api_key: str | None = None, api_secret: str | None = None):
+    """Write Binance credentials to .env — called whenever user updates via Telegram.
+
+    This keeps .env in sync with wallet_menu state so TradingEngine (which reads
+    .env at startup) always has the latest credentials.
+    """
+    from pathlib import Path
+
+    env_path = Path(__file__).parent.parent.parent.parent / ".env"
+    updates = {}
+    if api_key is not None:
+        updates["BINANCE_API_KEY"] = api_key
+    if api_secret is not None:
+        updates["BINANCE_API_SECRET"] = api_secret
+
+    if not updates:
         return
+
+    # Read current .env
+    current = {}
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                current[k.strip()] = v.strip()
+
+    # Apply updates
+    current.update(updates)
+
+    # Write back — escape newlines in values so .env stays single-line per key
+    lines = []
+    for k, v in current.items():
+        escaped = v.replace("\n", "\\n")
+        lines.append(f"{k}={escaped}")
+    env_path.write_text("\n".join(lines) + "\n")
+    log.info("Binance credentials synced to .env: %s", list(updates.keys()))
+
+
+def _sync_llm_key_to_env(provider: str, api_key: str):
+    """Write LLM API key to .env — called whenever user updates via Telegram.
+
+    Keeps .env in sync with state so main.py (which reads .env at startup)
+    always has the latest LLM credentials.
+    """
+    from pathlib import Path
+
+    env_path = Path(__file__).parent.parent.parent.parent / ".env"
+
+    # Map provider names to .env variable names
+    env_keys = {
+        "minimax": "MINIMAX_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "xiaomi": "XIAOMI_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+    }
+    env_key = env_keys.get(provider.lower(), f"{provider.upper()}_API_KEY")
+
+    # Read current .env
+    current = {}
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, _, v = line.partition("=")
+                current[k.strip()] = v.strip()
+
+    # Apply update
+    current[env_key] = api_key
+
+    # Write back
+    lines = []
+    for k, v in current.items():
+        escaped = v.replace("\n", "\\n")
+        lines.append(f"{k}={escaped}")
+    env_path.write_text("\n".join(lines) + "\n")
+    log.info("LLM credentials synced to .env: %s", env_key)
+
+
+def _fetch_binance_live_balance(api_key: str, api_secret: str) -> dict:
+    """Fetch real balance from Binance — returns dict with balance info."""
+    import ccxt
+    try:
+        ex = ccxt.binance({
+            "apiKey": api_key,
+            "secret": api_secret,
+            "enableRateLimit": True,
+            "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+        })
+        bal = ex.fetch_balance({"type": "future"})
+        total_usdt = bal.get("USDT", {}).get("total", 0)
+        free_usdt = bal.get("USDT", {}).get("free", 0)
+        positions = [p for p in ex.fetch_positions() if float(p.get("contracts", 0)) != 0]
+        return {
+            "success": True,
+            "total": total_usdt,
+            "free": free_usdt,
+            "positions": len(positions),
+            "btc_price": ex.fetch_ticker("BTC/USDT").get("last", 0),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
-def setup_menu_router(app, state_mgr, perf, exchange, trade_log=None, loader=None):
+def setup_menu_router(app, state_mgr, perf, exchange, trade_log=None, loader=None, trador=None):
     """Register menu handlers with proper callback routing.
     Replaces ALL dead handler systems (wallet, smart_mode, mode, direction).
     """
-    router = MenuRouter(state_mgr, perf, exchange, trade_log, loader)
+    router = MenuRouter(state_mgr, perf, exchange, trade_log, loader, trador)
     app.bot_data["menu_router"] = router
 
     # ALL inline keyboard callbacks go through menu router
@@ -1515,6 +1966,7 @@ def setup_menu_router(app, state_mgr, perf, exchange, trade_log=None, loader=Non
     app.add_handler(CallbackQueryHandler(router.handle_action, pattern="^action:", block=False))
     app.add_handler(CallbackQueryHandler(router.handle_strategy, pattern="^strat", block=False))
     app.add_handler(CallbackQueryHandler(router.handle_settings, pattern="^set:", block=False))
+    app.add_handler(CallbackQueryHandler(router.handle_adjust, pattern="^adj:", block=False))
     app.add_handler(CallbackQueryHandler(router.handle_history, pattern="^hist", block=False))
     app.add_handler(CallbackQueryHandler(router.handle_positions, pattern="^pos:", block=False))
     app.add_handler(CallbackQueryHandler(router.handle_wallet, pattern="^wallet:", block=False))

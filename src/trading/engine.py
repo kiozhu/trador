@@ -34,6 +34,42 @@ class TradingEngine:
             self.exchange.set_sandbox_mode(True)
         log.info("Trading engine init (testnet=%s)", testnet)
 
+    def reload_credentials(self, api_key: str, api_secret: str):
+        """Reload exchange credentials at runtime — for when API key/secret
+        is updated via Telegram wallet menu after bot startup.
+
+        CCXT auto-detects Ed25519 vs HMAC-SHA256 based on secret format:
+          - Ed25519: secret contains "-----BEGIN PRIVATE KEY-----"
+          - HMAC-SHA256: plain hex/base64 string
+        """
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.exchange = ccxt.binance({
+            "apiKey": api_key,
+            "secret": api_secret,
+            "enableRateLimit": True,
+            "options": {"defaultType": "future"},
+        })
+        if self.testnet:
+            self.exchange.set_sandbox_mode(True)
+        log.info("Trading engine credentials reloaded (testnet=%s, ed25519=%s)",
+                 self.testnet, "PRIVATE KEY" in api_secret)
+
+    def reload_from_env(self, env_path: str = ".env"):
+        """Reload credentials from a .env file — called after wallet menu
+        updates .env so the engine picks up new credentials without restart.
+
+        Ed25519 PEM keys are stored with literal \\n (escaped newlines) in .env
+        so dotenv can parse them as single-line values. Unescape when loading.
+        """
+        import os
+        from dotenv import dotenv_values
+        vals = dotenv_values(env_path)
+        api_key = vals.get("BINANCE_API_KEY") or ""
+        # Unescape \\n → actual newline for Ed25519 PEM keys
+        api_secret = (vals.get("BINANCE_API_SECRET") or "").replace("\\n", "\n")
+        self.reload_credentials(api_key, api_secret)
+
     async def fetch_ohlcv(self, symbol: str, timeframe: str = "15m", limit: int = 100) -> list:
         """Fetch OHLCV candles — multiple public sources with fallback chain.
 
@@ -172,59 +208,79 @@ class TradingEngine:
             return []
 
     async def place_order(
-        self,
-        symbol: str,
-        side: str,
-        order_type: str,
-        amount: float,
-        price: float | None = None,
-        sl_pct: float | None = None,
-        tp_pct: float | None = None,
-        leverage: int = 3,
-    ) -> dict:
-        """Place order with proper leverage and SL/TP calculation.
+            self,
+            symbol: str,
+            side: str,
+            order_type: str,
+            amount: float,
+            price: float | None = None,
+            sl_pct: float | None = None,
+            tp_pct: float | None = None,
+            leverage: int = 3,
+        ) -> dict:
+            """Place order with proper leverage and SL/TP calculation.
 
-        SL/TP percentages are in PRICE terms (not margin terms).
-        With leverage L: a 1% price move = L% margin change.
-        So to limit margin loss to X%, price must move X%/L.
-        """
-        try:
-            # Set leverage
-            await asyncio.to_thread(self.exchange.set_leverage, leverage, symbol)
+            SL/TP percentages are in PRICE terms (not margin terms).
+            With leverage L: a 1% price move = L% margin change.
 
-            # Build params with reduce-only SL/TP
-            params: dict[str, Any] = {
-                "leverage": leverage,
-                "reduceOnly": False,
-            }
-
-            # Calculate SL/TP prices from percentage (price terms)
-            if sl_pct is not None:
-                sl_pct_price = abs(sl_pct) / leverage  # price movement allowed
-                if side.upper() == "BUY" or side == "LONG":
-                    params["stopLossPrice"] = round(price * (1 - sl_pct_price) if price else 0, 8)
+            Amount: if <= 100, treated as percentage of balance (2.1 = 2.1%).
+                   if > 100, treated as absolute quantity (e.g. 0.05 BTC).
+            """
+            # Convert percentage to actual quantity if amount is a percentage
+            # amount <= 100 means it's a % of balance (e.g. 2.1 = 2.1% of balance)
+            # amount > 100 means it's an absolute quantity (e.g. 0.05 BTC)
+            if amount <= 100:
+                balance = self.get_balance()
+                if price and price > 0:
+                    amount = (balance * amount / 100) / price
                 else:
-                    params["stopLossPrice"] = round(price * (1 + sl_pct_price) if price else 0, 8)
+                    amount = 0.001  # fallback minimum
 
-            if tp_pct is not None:
-                tp_pct_price = abs(tp_pct) / leverage  # price movement for TP
-                if side.upper() == "BUY" or side == "LONG":
-                    params["takeProfitPrice"] = round(price * (1 + tp_pct_price) if price else 0, 8)
+            try:
+                # Set leverage
+                await asyncio.to_thread(self.exchange.set_leverage, leverage, symbol)
+
+                # Build params with reduce-only SL/TP
+                params: dict[str, Any] = {
+                    "leverage": leverage,
+                    "reduceOnly": False,
+                }
+
+                # Calculate SL/TP prices from percentage (price terms)
+                if sl_pct is not None:
+                    sl_pct_price = abs(sl_pct) / leverage  # price movement allowed
+                    if side.upper() == "BUY" or side == "LONG":
+                        params["stopLossPrice"] = round(price * (1 - sl_pct_price) if price else 0, 8)
+                    else:
+                        params["stopLossPrice"] = round(price * (1 + sl_pct_price) if price else 0, 8)
+
+                if tp_pct is not None:
+                    tp_pct_price = abs(tp_pct) / leverage  # price movement for TP
+                    if side.upper() == "BUY" or side == "LONG":
+                        params["takeProfitPrice"] = round(price * (1 + tp_pct_price) if price else 0, 8)
+                    else:
+                        params["takeProfitPrice"] = round(price * (1 - tp_pct_price) if price else 0, 8)
+
+                # Convert LONG/SHORT to BUY/SELL for Binance futures
+                if side.upper() == "LONG":
+                    order_side = "BUY"
+                elif side.upper() == "SHORT":
+                    order_side = "SELL"
                 else:
-                    params["takeProfitPrice"] = round(price * (1 - tp_pct_price) if price else 0, 8)
+                    order_side = side.upper()
 
-            order = await asyncio.to_thread(
-                self.exchange.create_order, symbol, order_type, side, amount, price, params
-            )
-            log.info(
-                "Order placed: %s %s %s %s @ %s, lev=%d, SL=%.4f, TP=%.4f",
-                side, order_type, symbol, amount, price, leverage,
-                params.get("stopLossPrice"), params.get("takeProfitPrice"),
-            )
-            return order
-        except Exception as e:
-            log.error("Order failed: %s", e)
-            return {}
+                order = await asyncio.to_thread(
+                    self.exchange.create_order, symbol, order_type, order_side, amount, price, params
+                )
+                log.info(
+                    "Order placed: %s %s %s %s @ %s, lev=%d, SL=%.4f, TP=%.4f",
+                    order_side, order_type, symbol, amount, price, leverage,
+                    params.get("stopLossPrice"), params.get("takeProfitPrice"),
+                )
+                return order
+            except Exception as e:
+                log.error("Order failed: %s", e)
+                return {}
 
     async def cancel_order(self, order_id: str, symbol: str) -> bool:
         try:
@@ -233,6 +289,98 @@ class TradingEngine:
         except Exception as e:
             log.error("Cancel order failed: %s", e)
             return False
+
+    async def get_open_orders(self, symbol: str | None = None) -> list[dict]:
+        """Get all open orders, optionally filtered by symbol."""
+        try:
+            # ccxt: fetch_open_orders(symbol, ...)
+            fetch = getattr(self.exchange, "fetch_open_orders", None)
+            if fetch:
+                orders = await asyncio.to_thread(fetch, symbol, limit=100)
+                return orders if isinstance(orders, list) else []
+            return []
+        except Exception as e:
+            log.error("Get open orders failed: %s", e)
+            return []
+
+    async def cancel_all_orders(self, symbol: str | None = None) -> dict:
+        """Cancel all open orders, optionally for a specific symbol."""
+        try:
+            count = 0
+            orders = await self.get_open_orders(symbol)
+            for order in orders:
+                sym = order.get("symbol", symbol) or ""
+                oid = str(order.get("id", ""))
+                if oid and sym:
+                    ok = await self.cancel_order(oid, sym)
+                    if ok:
+                        count += 1
+            return {"cancelled": count, "failed": len(orders) - count}
+        except Exception as e:
+            log.error("Cancel all orders failed: %s", e)
+            return {"cancelled": 0, "failed": 0, "error": str(e)}
+
+    async def close_position(self, symbol: str, side: str) -> dict:
+        """Close an open position using an opposing market order.
+        
+        Args:
+            symbol: e.g. 'BTC/USDT'
+            side: 'SHORT' to close a SHORT (needs BUY), 'LONG' to close a LONG (needs SELL)
+        Returns:
+            dict with 'success' bool and optional 'order' or 'error' key
+        """
+        try:
+            # Determine closing side (opposite of position side)
+            close_side = "buy" if side.upper() == "SHORT" else "sell"
+            
+            # Fetch position info from exchange
+            positions = await asyncio.to_thread(
+                self.exchange.fetch_positions, [symbol]
+            )
+            pos_size = 0
+            pos_side = None
+            for p in positions:
+                if p.get("symbol", "").replace("/", "") == symbol.replace("/", ""):
+                    size = p.get("contracts", 0) or p.get("size", 0)
+                    if size != 0:
+                        pos_size = abs(float(size))
+                        pos_side = "SHORT" if float(size) < 0 else "LONG"
+                        break
+            
+            if pos_size <= 0:
+                return {"success": False, "error": "No open position found"}
+            
+            # Use correct closing side based on actual position
+            close_side = "buy" if pos_side == "SHORT" else "sell"
+            
+            # Get current price
+            try:
+                ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+                price = ticker.get("last", 0)
+            except Exception:
+                price = None
+            
+            # Set leverage
+            lev = 1
+            await asyncio.to_thread(self.exchange.set_leverage, lev, symbol)
+            
+            # Place closing market order
+            order = await asyncio.to_thread(
+                self.exchange.create_order,
+                symbol,
+                "market",
+                close_side,
+                pos_size,
+                price,
+                {"reduceOnly": True},
+            )
+            log.info("Position closed: %s %s %.4f contracts @ %s", 
+                     symbol, close_side.upper(), pos_size, price)
+            return {"success": True, "order": order}
+            
+        except Exception as e:
+            log.error("Close position %s failed: %s", symbol, e)
+            return {"success": False, "error": str(e)}
 
     async def set_leverage(self, symbol: str, leverage: int) -> bool:
         try:

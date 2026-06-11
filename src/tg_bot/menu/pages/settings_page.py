@@ -45,11 +45,38 @@ def load_coin_list() -> list[str]:
 # Load on import
 COIN_LIST = load_coin_list()
 
-# Provider presets
+# Provider presets — base_url can be overridden by user
 LLM_PROVIDERS = {
-    "minimax": {"name": "MiniMax M3/M2", "base_url": "https://api.minimax.io", "model_default": "MiniMax-Text-01"},
-    "openai": {"name": "OpenAI (GPT-4)", "base_url": "https://api.openai.com/v1", "model_default": "gpt-4o-mini"},
-    "xiaomi_mimo": {"name": "Xiaomi MiMo", "base_url": "https://api.mimo.ai/v1", "model_default": "mimo-72b"},
+    "minimax": {
+        "name": "MiniMax",
+        "base_url": "https://api.minimax.io/v1",
+        "model_default": "MiniMax-M3",
+        "auth_type": "Bearer",
+    },
+    "xiaomi": {
+        "name": "Xiaomi MiMo",
+        "base_url": "https://platform.xiaomimimo.com/v1",
+        "model_default": "MiniMax-2.5-Pro",
+        "auth_type": "X-Api-Key",
+    },
+    "openai": {
+        "name": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "model_default": "gpt-4o-mini",
+        "auth_type": "Bearer",
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "base_url": "https://api.deepseek.com/v1",
+        "model_default": "deepseek-chat",
+        "auth_type": "Bearer",
+    },
+    "custom": {
+        "name": "Custom URL",
+        "base_url": "",
+        "model_default": "",
+        "auth_type": "Bearer",
+    },
 }
 
 
@@ -86,52 +113,63 @@ class SettingsPage(MenuPage):
         enabled_count = len(enabled_symbols) if enabled_symbols else 0
 
         text = (
-            "*⚙️ SETTINGS\n\n"
+            "⚙️ SETTINGS\n\n"
             f"Mode: {mode.upper()} | Trading: {'ON' if trading else 'OFF'}\n\n"
             "─── 🤖 LLM Smart ───\n"
             f"  Status: {'✅ ON' if llm_on else '❌ OFF'}\n"
             f"  API Key: {'✅ Set' if llm_api_key else '⛔ Not Set'}\n"
-            f"  Provider: {llm_base_url or 'Not configured'}\n\n"
-            "─── ⚡ Trading Params ───\n"
-            f"  ⏱️ Cycle Interval: {cycle_interval}s\n"
-            f"     → scan tiap {cycle_interval} detik\n"
-            f"  📋 Max Orders/Cycle: {max_orders}\n"
-            f"  🔢 Max Positions: {max_pos}\n"
-            f"  📉 Daily Loss Limit: *$ {daily_loss_limit:.0f}\n\n"
-            f"─── 🪙 Symbol Pool ───\n"
-            f"  Enabled: {enabled_count}/{len(COIN_LIST)} coins\n"
+            f"  Provider: {llm_base_url or 'Not configured'}\n"
         )
 
         keyboard = [
             [InlineKeyboardButton("🤖 LLM Smart", callback_data="set:llm_page")],
-            [InlineKeyboardButton(f"⏱️ Cycle: {cycle_interval}s →", callback_data="set:cycle_page")],
-            [InlineKeyboardButton(f"📉 Daily Loss: ${daily_loss_limit:.0f}", callback_data="set:daily_loss")],
-            [InlineKeyboardButton(f"📋 Max Orders: {max_orders}", callback_data="set:max_orders_cycle")],
-            [InlineKeyboardButton(f"🔢 Max Positions: {max_pos}", callback_data="set:max_positions")],
-            [InlineKeyboardButton(f"🪙 Coins ({enabled_count}/{len(COIN_LIST)})", callback_data="set:symbol_page")],
             [InlineKeyboardButton("◀️ Back", callback_data="page:main")],
         ]
         return text, InlineKeyboardMarkup(keyboard)
 
     def _build_llm_page(self, llm_on, api_key, base_url, model) -> tuple[str, InlineKeyboardMarkup]:
-        text = (
-            "*🤖 LLM Smart Settings\n\n"
-            "LLM Smart = Hermes kasih saran position size\n"
-            "berdasarkan analisis market regime.\n\n"
-            f"Status: {'✅ ON' if llm_on else '❌ OFF'}\n"
-            f"API Key: {'✅ Set' if api_key else '⛔ Not Set'}\n\n"
-            "─── Provider ───"
-        )
-        buttons = []
-        for key, info in LLM_PROVIDERS.items():
-            label = f"✅ {info['name']}" if base_url == info["base_url"] else info["name"]
-            buttons.append(InlineKeyboardButton(label, callback_data=f"set:llm_provider:{key}"))
+        state = self._state_mgr.get()
+        provider_key = state.get("llm_provider", "minimax")
+        active_provider = LLM_PROVIDERS.get(provider_key, LLM_PROVIDERS["minimax"])
 
-        rows = [buttons[i:i+2] for i in range(0, len(buttons), 2)]
+        # Show current values — use custom if base_url was manually set
+        if provider_key == "custom":
+            display_url = base_url or "(not set)"
+            display_model = model or "(not set)"
+        else:
+            display_url = base_url if base_url else active_provider["base_url"]
+            display_model = model if model else active_provider["model_default"]
+
+        has_key = bool(api_key)
+
+        text = (
+            "🤖 LLM Smart Settings\n\n"
+            f"Status: {'✅ ON' if llm_on else '❌ OFF'}\n"
+            f"API Key: {'✅ Set' if has_key else '⛔ Not Set'}\n\n"
+            f"Provider: {active_provider['name']}\n"
+            f"Base URL: {display_url}\n"
+            f"Model: {display_model}\n\n"
+            "─── Change Provider ───"
+        )
+
+        # Provider selection rows — 2 per row
+        rows = []
+        providers = [(k, v) for k, v in LLM_PROVIDERS.items() if k != "custom"]
+        for i in range(0, len(providers), 2):
+            row = []
+            for k, v in providers[i:i+2]:
+                label = f"✅ {v['name']}" if k == provider_key else v["name"]
+                row.append(InlineKeyboardButton(label, callback_data=f"set:llm_provider:{k}"))
+            rows.append(row)
+
+        rows.append([InlineKeyboardButton("✏️ Edit Base URL", callback_data="set:llm_base_url")])
+        rows.append([InlineKeyboardButton("✏️ Edit Model", callback_data="set:llm_model")])
         rows.append([InlineKeyboardButton("🔑 Set API Key", callback_data="set:llm_key")])
         rows.append([InlineKeyboardButton("🧪 Test Connection", callback_data="set:llm_test")])
-        rows.append([InlineKeyboardButton(f"{'🔴 Disable' if llm_on else '🟢 Enable'} LLM Smart",
-                                          callback_data="set:llm_toggle")])
+        rows.append([InlineKeyboardButton(
+            f"{'🔴 Disable' if llm_on else '🟢 Enable'} LLM Smart",
+            callback_data="set:llm_toggle"
+        )])
         rows.append([InlineKeyboardButton("◀️ Back", callback_data="page:settings")])
         return text, InlineKeyboardMarkup(rows)
 
@@ -143,10 +181,10 @@ class SettingsPage(MenuPage):
             filtered = COIN_LIST
 
         text = (
-            "*🪙 Symbol Pool — tap to toggle\n\n"
+            "🪙 Symbol Pool — tap to toggle\n\n"
             "✅ = enabled | ❌ = disabled\n"
             f"Total: {len(COIN_LIST)} coins (Binance Futures)\n\n"
-            "_Tap letter to filter, tap coin to toggle._"
+            "Tap letter to filter, tap coin to toggle."
         )
 
         # Letter filter rows — split into groups of 7 to stay within Telegram button-row limits
@@ -181,13 +219,13 @@ class SettingsPage(MenuPage):
             rows.append(row)
 
         # Back
-        rows.append([InlineKeyboardButton("◀️ Back", callback_data="page:settings")])
+        rows.append([InlineKeyboardButton("◀️ Back", callback_data="page:risk")])
         return text, InlineKeyboardMarkup(rows)
 
     def _build_cycle_page(self, current: int) -> tuple[str, InlineKeyboardMarkup]:
         options = [5, 10, 15, 30, 60, 120]
         text = (
-            "*⏱️ Cycle Interval\n\n"
+            "⏱️ Cycle Interval\n\n"
             "berapa detik antar scan cycle.\n"
             "Semakin kecil = lebih responsif tapi\n"
             "lebih banyak API calls.\n\n"

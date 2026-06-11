@@ -50,9 +50,9 @@ class HistoryPage(MenuPage):
         )
 
         if not trades:
-            text += "_No trades in this range._"
+            text += "No trades in this range."
         else:
-            text += "*Recent Trades:\n"
+            text += "Recent Trades:\n"
             text += "─────────────────────\n"
             for t in trades[-15:]:
                 side_icon = "🟢" if t.get("side") == "LONG" else "🔴"

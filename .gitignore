@@ -1,0 +1,67 @@
+# Environment & credentials
+.env
+*.pem
+*.key
+*.crt
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+.pypy/
+*.so
+
+# Logs
+logs/*.log
+*.log
+
+# Memory & state
+memory/dry_run/
+memory/live/
+memory/trade_history.json.bak
+memory/repair_results.json
+src/memory/rolling_stats.json
+src/memory/state.json
+state.json
+
+# Backtest results (keep dir but ignore files)
+backtest_results/*.json
+backtest_results/*.png
+
+# Temporary repair scripts
+fix_corrupt_timestamps.py
+fix_trade_timestamps.py
+repair_close_timestamps.py
+repair_trades.py
+
+# Shared / reports
+shared/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PM2
+ecosystem.config.js
+
+# Lessons backup
+logs/lessons.jsonl.bak
+
+# Untracked subdirs
+src/llm/__pycache__/
+src/memory/__pycache__/
+src/scanners/__pycache__/
+src/strategy/__pycache__/
+src/tg_bot/__pycache__/
+src/tg_bot/handlers/__pycache__/
+src/tg_bot/menu/__pycache__/
+src/tg_bot/menu/pages/__pycache__/
+src/trading/__pycache__/
+src/utils/__pycache__/

@@ -9,7 +9,7 @@ class MainPage(MenuPage):
 
     def build(self) -> tuple[str, InlineKeyboardMarkup]:
         text = (
-            "*🚀 TRADOR — Trading Bot\n\n"
+            "🚀 TRADOR — Trading Bot\n\n"
             "Pilih menu di bawah:"
         )
         keyboard = [

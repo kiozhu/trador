@@ -83,6 +83,7 @@ class StatusPage(MenuPage):
         active_lv = " ◀️ ACTIVE" if current_mode == "live" else ""
 
         wallet_icon = "✅" if wallet_connected else "❌"
+        wallet_label = "Terhubung" if wallet_connected else "Belum terhubung"
 
         # ── Build clean text (NO markdown) ───────────────────────────────
         lines = [
@@ -90,8 +91,8 @@ class StatusPage(MenuPage):
             "",
             f"Mode      : {mode_emoji}",
             f"Direction : {direction.upper()}",
-            f"Wallet    : {wallet_icon} {'Connected' if wallet_connected else 'Not connected'}",
-            f"Strategy  : {strategy_label}",
+            f"Wallet    : {wallet_icon} {wallet_label}",
+            f"Strategi  : {strategy_label}",
             f"Trading   : {trading}",
             "",
             f"🛡️ Risk   : {risk_status} | {regime_icon} {risk_regime} | Kelly {risk_kelly_str} | VaR 1d {risk_var_str}",

@@ -45,6 +45,8 @@ class StateManager:
                 "daily_loss_limit": 50.0,                   # $ max daily loss (not %)
                 "cycle_interval": 15,
                 "symbol_pool_size": 20,
+                # ── Risk Mode Toggles ─────────────────────────────────────────────
+                "sideways_mode": True,   # True = block trades in sideways market (Layer 11)
             })
 
     def get(self) -> dict[str, Any]:

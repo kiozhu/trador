@@ -17,12 +17,12 @@ class PositionsPage(MenuPage):
         total = len(positions)
 
         text = (
-            f"📈 *Positions — {mode.upper()}\n\n"
+            f"📈 Positions — {mode.upper()}\n\n"
             f"Open: {total}\n\n"
         )
 
         if not positions:
-            text += "_No open positions._"
+            text += "No open positions."
         else:
             for i, p in enumerate(positions):
                 idx = i + 1
@@ -36,7 +36,7 @@ class PositionsPage(MenuPage):
                 current_pnl = p.get("pnl", 0)
                 pnl_amt_str = f"+${current_pnl:.2f}" if current_pnl >= 0 else f"-${abs(current_pnl):.2f}"
                 text += f"{side_emoji} {idx}. {sym} {pnl_mark} (x{lev})\n"
-                text += f"   Entry: *${entry:.4f} | {strat}\n"
+                text += f"   Entry: ${entry:.4f} | {strat}\n"
                 text += f"   PnL: {pnl_amt_str}\n"
 
         # Mode toggle

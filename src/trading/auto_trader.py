@@ -174,7 +174,9 @@ class AutoTrader:
     async def _sync_risk_state(self):
         """Sync RiskGuard state to state_mgr for UI display."""
         state = self.state_mgr.get()
-        balance = state.get("dry_run_balance", 10000)
+        mode = state.get("mode", "dry_run")
+        balance_key = "dry_run_balance" if mode == "dry_run" else "live_balance"
+        balance = state.get(balance_key, 10000)
 
         # Get open positions count
         mode = state.get("mode", "dry_run")
@@ -186,7 +188,8 @@ class AutoTrader:
         win_rate = stats.win_rate / 100.0 if stats.win_rate else 0.55
 
         # VaR calculation (1d and 7d)
-        var_1d = self._var_cache.get("1d", {})
+        var_cache_key = f"{balance_key}_{balance:.0f}"
+        var_1d = self._var_cache.get(var_cache_key, {})
         if not var_1d:
             # Try to get BTC price for VaR
             try:
@@ -207,15 +210,18 @@ class AutoTrader:
                                     klines = await kr.json()
                                     prices = [float(k[4]) for k in klines]
                                     notional = balance * 0.2  # 20% exposure
+                                    var_cache_key_1d = f"{balance_key}_{balance:.0f}"
+                                    var_cache_key_7d = f"{balance_key}_{balance:.0f}_7d"
                                     var_1d = compute_var(prices, notional, "historical", 0.95, 1)
                                     var_7d = compute_var(prices, notional, "historical", 0.95, 7)
-                                    self._var_cache["1d"] = var_1d
-                                    self._var_cache["7d"] = var_7d
+                                    self._var_cache[var_cache_key_1d] = var_1d
+                                    self._var_cache[var_cache_key_7d] = var_7d
             except Exception:
                 pass
 
-        var_1d = self._var_cache.get("1d", {})
-        var_7d = self._var_cache.get("7d", {})
+        var_cache_key = f"{balance_key}_{balance:.0f}"
+        var_1d = self._var_cache.get(var_cache_key, {})
+        var_7d = self._var_cache.get(var_cache_key + "_7d", {})
 
         # Kelly fraction (from KellySizer)
         kelly_pct = self.kelly_sizer.size(
@@ -246,6 +252,7 @@ class AutoTrader:
             "risk_open_positions": open_count,
             "risk_consecutive_losses": self.risk_guard._consecutive_losses,
             "risk_killswitch_reason": self.risk_guard.killswitch_reason(),
+            "sideways_mode": self.risk_guard._sideways_mode,
         }
         self.state_mgr.update(**risk_state)
 
@@ -285,6 +292,13 @@ class AutoTrader:
             self.risk_guard.resume()
             self.state_mgr.set("_risk_action", "")
 
+        # ── Sync sideways mode from state to risk_guard ──────────────────
+        self.risk_guard.sync_sideways_mode(state)
+        # ── Sync time filter enabled from state to risk_guard ───────────────
+        if hasattr(self.risk_guard.config, 'time_filter_enabled'):
+            tfe = state.get("time_filter_enabled", False)
+            self.risk_guard.set_config(time_filter_enabled=tfe)
+
         # ── Sync risk state to state_mgr (for UI display) ─────────────────
         await self._sync_risk_state()
 
@@ -293,7 +307,6 @@ class AutoTrader:
 
         mode = state.get("mode", "dry_run")
         direction = state.get("direction", "both")
-        active_strategy_id = state.get("strategy_active")
 
         # ── Get all active strategies ─────────────────────────────────────────
         active_strategies = self.loader.list_active() if self.loader else []
@@ -362,46 +375,8 @@ class AutoTrader:
                          len(smart_candidates), smart_candidates[0]["score"])
             else:
                 candidates = []
-        # ── Step 3: Score candidates ─────────────────────────────────────────
-        smart_mode = state.get("smart_mode", False)
-        _candidate_strategies: dict[tuple, dict] = {}
-
-        if smart_mode and len(active_strategies) > 1:
-            # Smart Mode: score ALL strategies on ALL symbols once with candles cache
-            smart_candidates = []
-            _candles_cache: dict[tuple[str, str], list] = {}
-
-            async def _get_cached_candles(symbol: str, tf: str) -> list:
-                key = (symbol, tf)
-                if key not in _candles_cache:
-                    c = await self.engine.fetch_ohlcv(symbol, tf, limit=100)
-                    if not c or len(c) < 50:
-                        c = await self._get_candles_fallback(symbol, tf, 100)
-                    _candles_cache[key] = c
-                return _candles_cache[key]
-
-            for strat in active_strategies:
-                for sym in self.symbol_pool[:self.max_symbols_per_scan]:
-                    try:
-                        last_trade = self._cooldowns.get(sym, 0)
-                        if (datetime.now(timezone.utc).timestamp() - last_trade) < self._cooldown_seconds:
-                            continue
-                        signal = await self._check_symbol_with_candles(sym, strat, direction, _get_cached_candles)
-                        if signal and signal.get("score", 0) >= signal.get("min_score", 65):
-                            smart_candidates.append(signal)
-                            _candidate_strategies[(sym, signal.get("score", 0))] = strat
-                    except Exception as e:
-                        log.debug("Smart scoring error %s: %s", sym, e)
-
-            if smart_candidates:
-                smart_candidates.sort(key=lambda x: x["score"], reverse=True)
-                candidates = smart_candidates[:2]
-                log.info("Smart Mode: %d strategies × %d symbols → %d signals, top=%.0f",
-                         len(active_strategies), self.max_symbols_per_scan,
-                         len(smart_candidates), smart_candidates[0]["score"])
-            else:
-                candidates = []
         else:
+            # Normal mode: single strategy scoring
             candidates = await self._score_candidates(strategy, direction)
 
         if not candidates:
@@ -409,12 +384,31 @@ class AutoTrader:
             return
 
         # ── Step 4: Execute top candidate(s) ───────────────────────────────
+        # ENFORCE max_orders_per_cycle from state
+        max_orders_per_cycle = state.get("max_orders_per_cycle", 2)
+        max_orders_per_cycle = max(1, min(max_orders_per_cycle, 10))  # clamp to 1-10
+
         state = self.state_mgr.get()
-        balance = state.get("dry_run_balance", 10000)
-        for candidate in candidates[:2]:  # max 2 per cycle
-            best_strategy = _candidate_strategies.get(
-                (candidate["symbol"], candidate.get("score", 0)), strategy
-            )
+        mode = state.get("mode", "dry_run")
+        balance_key = "dry_run_balance" if mode == "dry_run" else "live_balance"
+        balance = state.get(balance_key, 10000)
+
+        # Count current open positions
+        open_count = len(self.trade_log.get_active(mode=mode)) if self.trade_log else 0
+        remaining_slots = max(0, max_orders_per_cycle - open_count)
+        if remaining_slots == 0:
+            log.info("Max positions reached (%d/%d) — skipping cycle", open_count, max_orders_per_cycle)
+            await self._log_cycle_summary(mode=mode, candidates=[], trades_executed=0, regime=self._market_regime)
+            return
+
+        candidates = candidates[:remaining_slots]  # never execute more than remaining slots
+
+        for candidate in candidates:
+            state = self.state_mgr.get()
+            mode = state.get("mode", "dry_run")
+            # In normal mode all candidates come from the same strategy; in smart mode
+            # the strategy is not needed for execution (signal already scored)
+            best_strategy = strategy
             # ── RiskGuard pre-trade validation ──────────────────────────
             trade_for_check = {
                 "symbol": candidate["symbol"],
@@ -1011,7 +1005,9 @@ class AutoTrader:
         # ── Position sizing ──────────────────────────────────────────────
         sizing_mode = state.get("position_sizing_mode", "fixed_percent")
         llm_enabled = state.get("llm_enabled", False)
-        balance = state.get("dry_run_balance", 10000)
+        mode = state.get("mode", "dry_run")
+        balance_key = "dry_run_balance" if mode == "dry_run" else "live_balance"
+        balance = state.get(balance_key, 10000)
         max_pos_pct = state.get("max_position_size_pct", 20)
         fixed_pct = state.get("balance_per_trade_pct", 10)
 

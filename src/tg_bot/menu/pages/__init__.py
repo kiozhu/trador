@@ -14,6 +14,7 @@ from .direction_page import DirectionPage
 from .monitor_page import MonitorPage
 from .settings_page import SettingsPage, LLM_PROVIDERS
 from .risk_page import RiskPage
+from .risk_config_page import RiskConfigPage
 
 __all__ = [
     "MainPage", "StatusPage", "HelpPage",
@@ -21,5 +22,6 @@ __all__ = [
     "BalancePage", "WalletPage", "SmartPage",
     "QuickPage", "ModePage", "DirectionPage",
     "MonitorPage", "SettingsPage", "RiskPage",
+    "RiskConfigPage",
     "LLM_PROVIDERS",
 ]

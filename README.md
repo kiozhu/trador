@@ -36,7 +36,7 @@ Bot trading crypto futures dengan kontrol penuh via **Telegram**. Didesain untuk
 | 5 | **LLM Smart Mode** | Position sizing yang driven oleh AI — cocok untuk yang mau automasi cerdas |
 | 6 | **Hermes Self-Improve** | Cron job otomatis yang analisa trade history → edit strategy YAML langsung |
 | 7 | **Telegram-First Control** | Semua kontrol dari inline keyboard menu — tidak perlu CLI, tidak perlu SSH |
-| 8 | **Dry Run + Live** | Dry run dengan balance virtual $100 — sebelum pakai uang sungguhan |
+| 8 | **Dry Run + Live** | Dry run dengan balance virtual $250 — sebelum pakai uang sungguhan |
 | 9 | **Backtesting** | Equity curve + drawdown + Sharpe/Sortino/MaxDD dari data historis |
 | 10 | **Zero Credentials in Git** | `.env` tidak pernah masuk Git — API keys aman |
 
@@ -73,10 +73,10 @@ Bot trading crypto futures dengan kontrol penuh via **Telegram**. Didesain untuk
           ┌──────────────────┴──────────────────┐
           ↓                                       ↓
 ┌─────────────────────┐              ┌─────────────────────┐
-│  BINANCE FUTURES    │              │   HYPERLIQUID       │
-│  (ccxt)             │              │   (ccxt)            │
-│  • API Key + Secret │              │   • API Key + Secret│
-│  • Real balance    │              │   • No wallet addr   │
+│  BINANCE FUTURES    │              │   PENDING │
+│  (ccxt)             │              │   Integration │
+│  • API Key + Secret │              │   (Hyperliquid)     │
+│  • Real balance     │              │   (coming soon)     │
 └─────────────────────┘              └─────────────────────┘
 ```
 
@@ -120,7 +120,7 @@ Analisa 3 timeframe (15m/1h/4h) secara parallel. Score ≥ 80 langsung execute (
 ### Requirements
 - Python 3.10+
 - Telegram Bot Token (dari @BotFather)
-- API Key + Secret Binance Futures **ATAU** Hyperliquid (hanya untuk live mode)
+- API Key + Secret Binance Futures (hanya untuk live mode)
 - Hermes Agent (opsional — untuk Smart Mode + self-improve cron job)
 
 ### Instalasi
@@ -171,12 +171,11 @@ BOT_TOKEN=*** Token dari @BotFather
 ADMIN_CHAT_ID=       # Numeric chat ID kamu (dari @userinfobot)
 
 # === Exchange ===
-EXCHANGE=binance     # "binance" atau "hyperliquid"
+EXCHANGE=binance     # "binance" (Hyperliquid tidak tersedia)
 TESTNET_MODE=false   # true untuk Binance Testnet
 
 # === API Keys (hanya untuk live mode) ===
 # Binance Futures: API Key + Secret
-# Hyperliquid: API Key + Secret (TIDAK perlu wallet address)
 
 # === LLM (opsional — untuk Smart Mode) ===
 LLM_PROVIDER=openrouter
@@ -394,13 +393,13 @@ Halaman Telegram khusus untuk monitoring risk:
 ## 🔄 Mode Trading
 
 ### Dry Run (Simulasi)
-- Balance virtual: $100 default
+- Balance virtual: $250 default
 - Tidak ada order real — semua simulate
 - Cocok untuk testing strategi + verify bot behavior
-- Reset balance: Balance page → 🔄 Reset Dry Run → $100
+- Reset balance: Balance page → 🔄 Reset Dry Run → $250
 
 ### Live (Real)
-- Balance sync dari exchange API (Binance Futures / Hyperliquid)
+- Balance sync dari exchange API (Binance Futures)
 - Order real dieksekusi
 - ⚠️ Risk tinggi — gunakan uang yang siap kehilangan
 
@@ -436,8 +435,8 @@ python3 -m src.backtesting.run --strategy whale_rider --symbol BTCUSDT --interva
 - [ ] **MTF analysis verified** — false breakout rate rendah di live conditions
 
 ### Current Dry Run Track Record:
-- ❌ 6/6 losing trades (100% loss rate)
-- ❌ Balance $100 → $96 (negative return)
+- ❌ 4/4 losing trades (100% loss rate)
+- ❌ Balance $250 → $97.05 (negative return)
 - ❌ API key belum tested di real execution
 
 ### Kapan boleh mulai live:
@@ -465,8 +464,7 @@ Normal — bot mencoba render halaman yang isinya sama. Sudah di-handle graceful
 ### Wallet connection failed
 1. Cek API Key + Secret benar
 2. Pastikan Futures enabled untuk Binance
-3. Hyperliquid: hanya API Key + Secret, tidak perlu wallet address
-4. Cek network connectivity dari server
+3. Cek network connectivity dari server
 
 ### Scanner tidak jalan
 - Scanner berjalan otomatis saat trading enabled

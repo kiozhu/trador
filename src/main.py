@@ -43,10 +43,34 @@ class Trador:
         import os
         api_key = os.getenv("BINANCE_API_KEY", "")
         api_secret = os.getenv("BINANCE_API_SECRET", "")
-        telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        # Decode base64-encoded Telegram token if stored as b64:ODkx... (platform
+        # credential filtering replaces raw tokens with *** in tool calls)
+        telegram_token_raw = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        if telegram_token_raw.startswith("b64:"):
+            import base64
+            telegram_token = base64.b64decode(telegram_token_raw[4:]).decode()
+        else:
+            telegram_token = telegram_token_raw
         minimax_key = os.getenv("MINIMAX_API_KEY", "")
-        testnet = os.getenv("TESTNET", "false").lower() == "true"
+        xiaomi_key = os.getenv("XIAOMI_API_KEY", "")
+        openai_key = os.getenv("OPENAI_API_KEY", "")
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
 
+        # Detect active LLM provider (first found in priority order)
+        self._llm_provider = "minimax"
+        self._llm_api_key = ""
+        for prov, key in [
+            ("xiaomi", xiaomi_key),
+            ("openai", openai_key),
+            ("deepseek", deepseek_key),
+            ("minimax", minimax_key),
+        ]:
+            if key:
+                self._llm_provider = prov
+                self._llm_api_key = key
+                break
+
+        testnet = os.getenv("TESTNET", "false").lower() == "true"
         # Paths
         base = Path(__file__).parent.parent
         strategies_dir = base / "strategies"
@@ -60,7 +84,7 @@ class Trador:
         self.perf = PerformanceTracker(memory_dir)
         self.loader = StrategyLoader(strategies_dir)
         self.loader.load_all()
-        self.llm = LLMScorer(minimax_key) if minimax_key else None
+        self.llm = LLMScorer(self._llm_api_key, self._llm_provider) if self._llm_api_key else None
         self.hermes_reporter = HermesReporter(shared_dir / "trador_reports")
         self.hermes_reader = HermesReader(shared_dir / "hermes_suggestions")
 
@@ -72,12 +96,32 @@ class Trador:
         self.watcher = StrategyWatcher(strategies_dir, on_strategy_change)
         self.watcher.start()
 
+        def reload_llm():
+            """Reload LLM from .env — called when user updates API key via Telegram."""
+            from .llm.scorer import LLMScorer
+            for prov_, key_ in [
+                ("xiaomi", os.getenv("XIAOMI_API_KEY", "")),
+                ("openai", os.getenv("OPENAI_API_KEY", "")),
+                ("deepseek", os.getenv("DEEPSEEK_API_KEY", "")),
+                ("minimax", os.getenv("MINIMAX_API_KEY", "")),
+            ]:
+                if key_:
+                    self._llm_provider = prov_
+                    self._llm_api_key = key_
+                    break
+            if self._llm_api_key:
+                self.llm = LLMScorer(self._llm_api_key, self._llm_provider)
+                log.info("LLM reloaded: provider=%s model=%s", self._llm_provider, self.llm.model)
+            else:
+                self.llm = None
+                log.info("LLM disabled (no API key found)")
+
         # Telegram bot
         self.app = Application.builder().token(telegram_token).build()
 
         # Setup handler groups — ONLY live handlers remain
         setup_quick_handlers(self.app, self.state_mgr, self.engine, self.loader)
-        setup_menu_router(self.app, self.state_mgr, self.perf, self.engine, self.trade_log, self.loader)
+        setup_menu_router(self.app, self.state_mgr, self.perf, self.engine, self.trade_log, self.loader, self)
 
         # ── Slash commands (sync with bot command menu) ───────────────────────
         from .tg_bot.handlers.menu import cmd_status as cmd_status_menu
@@ -184,7 +228,17 @@ class Trador:
             hermes_reporter=self.hermes_reporter,
         )
         await self.auto_trader.start()
-        log.info("AutoTrader started (interval=5s)")
+        log.info("AutoTrader started (interval=15s)")
+
+        # Expose auto_trader so menu router can reach RiskGuard for config edits
+        self.app.bot_data["auto_trader"] = self.auto_trader
+
+        # Wire auto_trader to RiskPage so it can access risk_guard for config display
+        menu_router = self.app.bot_data.get("menu_router")
+        if menu_router:
+            risk_page = menu_router.nav.pages.get("risk")
+            if risk_page and hasattr(risk_page, 'set_auto_trader'):
+                risk_page.set_auto_trader(self.auto_trader)
 
         try:
             while self.running:

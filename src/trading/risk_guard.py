@@ -51,20 +51,21 @@ class RiskGuardConfig:
     min_volatility_threshold: float = 0.3   # min ATR% to allow trades
     max_volatility_threshold: float = 8.0  # block if ATR% > 8%
 
-    # ── Layer 8: Time-based filters ─────────────────────────────────
-    no_trade_hours_utc:       list[int] = field(default_factory=lambda: [])  # e.g. [0,1,2,3,4,5]
-    no_trade_minutes_utc:     list[int] = field(default_factory=lambda: [])  # e.g. [59] near hour close
+    # ── Layer 4: Time-based filters (WIB) ─────────────────────────
+    time_filter_enabled:       bool = False   # ON/OFF toggle
+    no_trade_hours_wib:        list[int] = field(default_factory=lambda: [])  # WIB hours, e.g. [0,1,2,3,4,5] = 07-12 WIB
+    no_trade_minutes_wib:      list[int] = field(default_factory=lambda: [])  # near hour close
 
-    # ── Layer 9: Balance floor ──────────────────────────────────────
-    min_balance_usd:          float = 100.0  # block if balance < $100
-    emergency_balance_usd:     float = 50.0   # hard block everything below this
+    # ── Layer 5: Balance floor ──────────────────────────────────────
+    min_balance_usd:          float = 5.0  # block if balance < $5
+    emergency_balance_usd:     float = 5.0   # hard block everything below this
 
-    # ── Layer 10: Regime alignment ─────────────────────────────────
+    # ── Layer 6: Regime alignment ─────────────────────────────────
     blocked_regimes:          list[str] = field(default_factory=lambda: ["sideway"])
 
 
 class RiskGuard:
-    """10-layer pre-trade risk validation + kill/resume + circuit breaker."""
+    """6-layer pre-trade risk validation + kill/resume + circuit breaker."""
 
     def __init__(
         self,
@@ -78,6 +79,7 @@ class RiskGuard:
         self._mode: TradingMode = TradingMode.RESUME
         self._killswitch_reason: str = ""
         self._killswitch_timestamp: float = 0.0
+        self._sideways_mode: bool = True  # True = block sideways trades (Layer 11)
 
         # ── Session stats (reset on new day) ────────────────────────
         self._session_start: datetime = datetime.now(timezone.utc)
@@ -106,7 +108,25 @@ class RiskGuard:
     def resume(self) -> None:
         """Resume normal trading after a kill."""
         self._mode = TradingMode.RESUME
-        log.info("▶ RISKGUARD RESUMED — normal trading re-enabled")
+
+    def set_sideways_mode(self, enabled: bool) -> None:
+        """Enable/disable sideways market blocking (Layer 11)."""
+        self._sideways_mode = enabled
+        log.info("RiskGuard sideways mode: %s", "ON" if enabled else "OFF")
+
+    def sync_sideways_mode(self, state: dict) -> None:
+        """Sync sideways_mode from state dict (called each AutoTrader cycle)."""
+        self._sideways_mode = state.get("sideways_mode", True)
+
+    def set_config(self, **kwargs) -> None:
+        """Update RiskGuardConfig params at runtime. E.g. set_config(max_position_size_pct=30.0)."""
+        for key, value in kwargs.items():
+            if hasattr(self.config, key):
+                old = getattr(self.config, key)
+                setattr(self.config, key, value)
+                log.info("RiskGuard config updated: %s = %s (was %s)", key, value, old)
+            else:
+                log.warning("RiskGuard config: unknown param '%s'", key)
 
     def is_killed(self) -> bool:
         """Return True if RiskGuard is in kill mode."""
@@ -129,16 +149,9 @@ class RiskGuard:
         results: list[RiskLayerResult] = []
 
         for layer_fn in [
-            self._layer01_killswitch,
-            self._layer02_daily_loss_breaker,
-            self._layer03_trade_count_limits,
-            self._layer04_position_exposure,
-            self._layer05_symbol_concentration,
-            self._layer06_consecutive_loss_cooldown,
-            self._layer07_drawdown_limit,
-            self._layer08_volatility_filter,
-            self._layer09_time_filter,
-            self._layer10_balance_floor,
+            self._layer04_time_filter,
+            self._layer05_balance_floor,
+            self._layer06_regime_alignment,
         ]:
             result = layer_fn(trade, balance)
             results.append(result)
@@ -425,44 +438,54 @@ class RiskGuard:
             severity="info",
         )
 
-    def _layer09_time_filter(self, trade: dict, balance: float) -> RiskLayerResult:
-        """Layer 9: Time-based filter (no trade during certain hours)."""
+    def _layer04_time_filter(self, trade: dict, balance: float) -> RiskLayerResult:
+        """Layer 4: Time-based filter (WIB) — block during specified hours if enabled."""
         cfg = self.config
-        now = datetime.now(timezone.utc)
-        hour_utc = now.hour
-        minute_utc = now.minute
 
-        if hour_utc in cfg.no_trade_hours_utc:
+        if not cfg.time_filter_enabled:
             return RiskLayerResult(
-                layer="L09_TIME_FILTER",
-                passed=False,
-                reason=f"Hour {hour_utc} UTC is in blocked hours list",
-                severity="warn",
+                layer="L04_TIME_FILTER",
+                passed=True,
+                reason="Time filter OFF",
+                severity="info",
             )
 
-        if minute_utc in cfg.no_trade_minutes_utc:
+        # WIB = UTC + 7
+        now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+        hour_wib = now_wib.hour
+        minute_wib = now_wib.minute
+
+        if hour_wib in cfg.no_trade_hours_wib:
             return RiskLayerResult(
-                layer="L09_TIME_FILTER",
+                layer="L04_TIME_FILTER",
                 passed=False,
-                reason=f"Minute {minute_utc} UTC is in blocked minutes list",
-                severity="warn",
+                reason=f"Jam {hour_wib:02d} WIB diblokir",
+                severity="block",
+            )
+
+        if minute_wib in cfg.no_trade_minutes_wib:
+            return RiskLayerResult(
+                layer="L04_TIME_FILTER",
+                passed=False,
+                reason=f"Menit {minute_wib} WIB diblokir (dekat jam selesai)",
+                severity="block",
             )
 
         return RiskLayerResult(
-            layer="L09_TIME_FILTER",
+            layer="L04_TIME_FILTER",
             passed=True,
-            reason=f"Hour {hour_utc} UTC allowed",
+            reason=f"Jam {hour_wib:02d}:{minute_wib:02d} WIB — diizinkan",
             severity="info",
         )
 
-    def _layer10_balance_floor(self, trade: dict, balance: float) -> RiskLayerResult:
-        """Layer 10: Balance floor — block if balance too low."""
+    def _layer05_balance_floor(self, trade: dict, balance: float) -> RiskLayerResult:
+        """Layer 5: Balance floor — block if balance too low."""
         cfg = self.config
 
         if balance < cfg.emergency_balance_usd:
             self.kill(f"Emergency balance floor hit: ${balance:.2f}")
             return RiskLayerResult(
-                layer="L10_BALANCE_FLOOR",
+                layer="L05_BALANCE_FLOOR",
                 passed=False,
                 reason=f"Balance ${balance:.2f} < emergency floor ${cfg.emergency_balance_usd}",
                 severity="block",
@@ -470,34 +493,43 @@ class RiskGuard:
 
         if balance < cfg.min_balance_usd:
             return RiskLayerResult(
-                layer="L10_BALANCE_FLOOR",
+                layer="L05_BALANCE_FLOOR",
                 passed=False,
                 reason=f"Balance ${balance:.2f} < min required ${cfg.min_balance_usd}",
                 severity="block",
             )
 
         return RiskLayerResult(
-            layer="L10_BALANCE_FLOOR",
+            layer="L05_BALANCE_FLOOR",
             passed=True,
             reason=f"Balance ${balance:.2f} OK",
             severity="info",
         )
 
-    def _layer11_regime_alignment(self, trade: dict, balance: float) -> RiskLayerResult:
-        """Layer 11 (bonus): Block trades in disallowed regimes."""
+    def _layer06_regime_alignment(self, trade: dict, balance: float) -> RiskLayerResult:
+        """Layer 6: Block trades in disallowed regimes — controlled by sideways_mode."""
         cfg = self.config
         regime = trade.get("market_regime", "unknown")
 
+        # Respect the toggle — if sideways_mode is False, allow all regimes
+        if not self._sideways_mode:
+            return RiskLayerResult(
+                layer="L06_REGIME",
+                passed=True,
+                reason=f"Regime '{regime}' allowed (sideways_mode=OFF)",
+                severity="info",
+            )
+
         if regime in cfg.blocked_regimes:
             return RiskLayerResult(
-                layer="L11_REGIME",
+                layer="L06_REGIME",
                 passed=False,
                 reason=f"Regime '{regime}' is blocked",
                 severity="warn",
             )
 
         return RiskLayerResult(
-            layer="L11_REGIME",
+            layer="L06_REGIME",
             passed=True,
             reason=f"Regime '{regime}' allowed",
             severity="info",

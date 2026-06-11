@@ -142,15 +142,18 @@ def _scenario_liquidation_cascade(
     actual_move = abs(shock) * 100 * leverage
     likely_liquidated = actual_move > liquidation_threshold * 0.8
 
-    recommendation = (
-        "🚨 LIQUIDATION RISK: A -15% move with current leverage ({leverage}×) "
-        "would trigger forced liquidation. "
-        "Reduce leverage to ≤2× or increase collateral to survive a vol spike."
-        if likely_liquidated else
-        f"⚠️  A -15% move would cause ~{actual_move:.0f}% margin loss. "
-        f"Current liquidation threshold is ~{liquidation_threshold:.0f}%. "
-        "Consider reducing leverage or adding buffer margin."
-    )
+    if likely_liquidated:
+        recommendation = (
+            f"🚨 LIQUIDATION RISK: A -15% move with {leverage}× leverage "
+            "would trigger forced liquidation. "
+            "Reduce leverage to ≤2× or increase collateral to survive a vol spike."
+        )
+    else:
+        recommendation = (
+            f"⚠️  A -15% move would cause ~{actual_move:.0f}% margin loss. "
+            f"Current liquidation threshold is ~{liquidation_threshold:.0f}%. "
+            "Consider reducing leverage or adding buffer margin."
+        )
 
     return StressResult(
         scenario=Scenario.LIQUIDATION_CASCADE.value,
@@ -281,11 +284,9 @@ def _scenario_funding_spike(
     loss_usd = notional * (total_funding_cost_pct / 100)
 
     recommendation = (
-        f"⚠️  Funding spike scenario: accumulated funding cost of "
-        f"{total_funding_cost_pct:.2f}% over 3 days (at0.1%/8h). "
-        "Monitor funding rates before entering perpetual futures positions. "
-        "Pre-set alerts for funding rate reversals and consider taking the "
-        "opposite side of the funding trade if rate exceeds 0.15%/8h."
+        f"⚠️  Funding spike: accumulated cost of {total_funding_cost_pct:.2f}% "
+        "over 3 days (at 0.1%/8h). Monitor funding rates before entering "
+        "perpetual futures. Pre-set alerts for funding reversals (>0.15%/8h)."
     )
 
     return StressResult(
@@ -301,6 +302,96 @@ def _scenario_funding_spike(
             "hours_simulated": periods * 8,
         },
     )
+
+
+# ── Single-scenario runner (used by Telegram menu) ─────────────────────────────
+
+def run_single_scenario(
+    scenario: str,
+    prices: list[float],
+    notional: float,
+    position_entry: float,
+    position_size: float,
+    leverage: int = 3,
+) -> dict[str, Any]:
+    """Run one specific stress scenario and return its result.
+
+    Args:
+        scenario: one of black_swan, liquidation_cascade, market_maker_withdrawal,
+                  correlation_breakdown, sudden_funding_spike
+        prices:        price series (oldest → newest)
+        notional:     USD notional of the portfolio
+        position_entry: entry price of the active position
+        position_size:  size of the active position (contracts)
+        leverage:     current leverage multiplier
+
+    Returns:
+        dict mirroring run_stress_test format but with only one scenario
+    """
+    scenario_fn_map = {
+        "black_swan": (
+            _scenario_black_swan, Scenario.BLACK_SWAN.value, "Black Swan"
+        ),
+        "liquidation_cascade": (
+            _scenario_liquidation_cascade, Scenario.LIQUIDATION_CASCADE.value,
+            "Liquidation Cascade"
+        ),
+        "market_maker_withdrawal": (
+            _scenario_mm_withdrawal, Scenario.MARKET_MAKER_WITHDRAWAL.value,
+            "Market Maker Withdrawal"
+        ),
+        "correlation_breakdown": (
+            _scenario_correlation_breakdown, Scenario.CORRELATION_BREAKDOWN.value,
+            "Correlation Breakdown"
+        ),
+        "sudden_funding_spike": (
+            _scenario_funding_spike, Scenario.SUDDEN_FUNDING_SPIKE.value,
+            "Funding Spike"
+        ),
+    }
+
+    fn, scenario_value, label = scenario_fn_map.get(
+        scenario,
+        (_scenario_black_swan, Scenario.BLACK_SWAN.value, "Black Swan")
+    )
+
+    if scenario == "liquidation_cascade":
+        result = fn(prices, notional, position_entry, position_size, leverage)
+    else:
+        result = fn(prices, notional, position_entry, position_size)
+
+    severity_order = [Severity.LOW, Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL]
+    worst = result.severity
+    overall_passed = worst not in (Severity.HIGH, Severity.CRITICAL)
+
+    scenario_result = {
+        "scenario": result.scenario,
+        "severity": result.severity.value,
+        "estimated_loss_pct": result.estimated_loss_pct,
+        "estimated_loss_usd": result.estimated_loss_usd,
+        "recommendation": result.recommendation,
+        "details": result.details,
+        "timestamp": result.timestamp,
+        "passed": result.passed,
+    }
+
+    report = {
+        "overall_passed": overall_passed,
+        "worst_severity": worst.value,
+        "total_estimated_loss_usd": result.estimated_loss_usd,
+        "worst_scenario_loss_usd": result.estimated_loss_usd,
+        "notional": notional,
+        "leverage": leverage,
+        "scenarios": [scenario_result],
+        "label": label,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    log.info(
+        "Stress test (single scenario %s) — passed=%s, loss=$%.2f",
+        scenario, overall_passed, result.estimated_loss_usd,
+    )
+    return report
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

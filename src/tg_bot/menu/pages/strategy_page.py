@@ -15,9 +15,9 @@ class StrategyPage(MenuPage):
         active_ids = set(self._loader.list_active_ids()) if self._loader else set()
 
         lines = [
-            "*📈 STRATEGI — Multi-Strategy\n",
+            "📈 STRATEGI — Multi-Strategy\n",
             f"Active: {len(active_ids)} | Total: {len(strategies)}\n",
-            "_Tap untuk toggle aktif/nonaktif._\n",
+            "Tap untuk toggle aktif/nonaktif.\n",
         ]
 
         buttons = []

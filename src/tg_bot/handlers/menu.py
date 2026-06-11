@@ -18,7 +18,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     state_mgr: StateManager, perf: PerformanceTracker):
     state = state_mgr.get()
-    perf_data = perf.get()
+    perf_data = perf.get() if perf else {}
     pos_count = state.get("open_positions", 0)
     strategy = state.get("strategy_active", "none")
     trading = "🟢 Active" if state.get("trading_enabled") else "🔴 Stopped"
@@ -27,24 +27,42 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE,
     direction = state.get("direction", "both")
     wallet = "✅" if state.get("wallet_connected") else "❌"
 
+    # ── Risk fields (synced from AutoTrader) ───────────────────────────
+    regime = state.get("risk_volatility_regime", "unknown")
+    kelly = state.get("risk_kelly_pct", 0.0)
+    var_1d = state.get("risk_var_1d_usd", 0.0)
+    cvar_1d = state.get("risk_cvar_1d_usd", 0.0)
+    daily_pnl = state.get("risk_daily_pnl_usd", 0.0)
+    consec_loss = state.get("risk_consecutive_losses", 0)
+    sideways = state.get("sideways_mode", True)
+    llm = "🟢 ON" if state.get("llm_enabled") else "🔴 OFF"
+
+    regime_icon = {"bullish": "📈", "bearish": "📉", "sideway": "↔️"}.get(regime, "❓")
+    sideways_icon = "🟢 ALLOWED" if not sideways else "🔴 BLOCKED"
+
     cooling = state.get("cooling_until")
     cooling_msg = ""
     if cooling:
         from datetime import datetime, timezone
         remaining = (cooling - int(datetime.now(timezone.utc).timestamp() * 1000)) // 1000
         if remaining > 0:
-            cooling_msg = f"\n⏳ Cooling: {remaining}s"
+            cooling_msg = f" | ⏳ Cooling: {remaining}s"
 
     text = (
         f"*🔥 TRADOR STATUS*\n\n"
-        f"Mode: {mode_emoji} | Direction: `{direction.upper()}`\n"
-        f"Wallet: {wallet} | Strategy: `{strategy}`\n"
-        f"Trading: {trading}{cooling_msg}\n"
-        f"Open Positions: {pos_count}\n\n"
+        f"*Mode:* {mode_emoji} | *Direction:* `{direction.upper()}`\n"
+        f"*Wallet:* {wallet} | *Strategy:* `{strategy}`\n"
+        f"*Trading:* {trading}{cooling_msg}\n"
+        f"*LLM:* {llm} | *Sideways:* {sideways_icon}\n"
+        f"*Open Positions:* {pos_count}\n\n"
+        f"*📊 Risk Engine*\n"
+        f"Regime: {regime_icon} {regime.capitalize()} | Kelly: {kelly:.1f}%\n"
+        f"VaR 1d: ${var_1d:,.2f} | CVaR 1d: ${cvar_1d:,.2f}\n"
+        f"Daily PnL: ${daily_pnl:+,.2f} | Consec Loss: {consec_loss}\n\n"
         f"*24h Performance*\n"
         f"Trades: {perf_data.get('24h', {}).get('trades', 0)}\n"
-        f"Win Rate: {perf_data.get('24h', {}).get('win_rate', 0)}%\n"
-        f"PnL: ${perf_data.get('24h', {}).get('pnl_usd', 0):.2f}"
+        f"Win Rate: {perf_data.get('24h', {}).get('win_rate', 0):.1f}%\n"
+        f"PnL: ${perf_data.get('24h', {}).get('pnl_usd', 0):+.2f}"
     )
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=main_menu_keyboard())
 

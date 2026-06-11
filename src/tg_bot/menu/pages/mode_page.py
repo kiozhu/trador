@@ -25,7 +25,7 @@ class ModePage(MenuPage):
 
         text = (
             f"🎮 TRADING MODE\n\n"
-            f"Current:* {'🔴 LIVE' if current_mode == 'live' else '🟡 DRY RUN'}\n\n"
+            f"Current: {'🔴 LIVE' if current_mode == 'live' else '🟡 DRY RUN'}\n\n"
             f"LIVE mode prerequisites:\n"
             f"  {wallet_status} Wallet connected\n"
             f"  {size_status} Size per trade set ({balance_per_trade}%)\n\n"
