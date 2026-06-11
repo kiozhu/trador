@@ -24,19 +24,19 @@ class ModePage(MenuPage):
         live_prereq = wallet_connected and balance_per_trade > 0
 
         text = (
-            f"*🎮 TRADING MODE*\n\n"
-            f"*Current:* {'🔴 LIVE' if current_mode == 'live' else '🟡 DRY RUN'}\n\n"
+            f"🎮 TRADING MODE\n\n"
+            f"Current:* {'🔴 LIVE' if current_mode == 'live' else '🟡 DRY RUN'}\n\n"
             f"LIVE mode prerequisites:\n"
             f"  {wallet_status} Wallet connected\n"
             f"  {size_status} Size per trade set ({balance_per_trade}%)\n\n"
         )
 
         if current_mode == "live":
-            text += "🔴 *LIVE mode active* — real money at risk.\n\n"
+            text += "🔴 LIVE mode active — real money at risk.\n\n"
             text += "⚠️ To switch back to Dry Run, use Stop Trading first."
         else:
             if live_prereq:
-                text += "🟡 *Dry Run* — testing mode, no real money.\n"
+                text += "🟡 Dry Run — testing mode, no real money.\n"
                 text += "✅ LIVE prerequisites met — ready to switch."
             else:
                 missing = []

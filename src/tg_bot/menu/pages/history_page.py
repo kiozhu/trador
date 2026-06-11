@@ -42,17 +42,17 @@ class HistoryPage(MenuPage):
         wr_icon = "🟢" if wr >= 60 else "🟡" if wr >= 45 else "🔴"
 
         text = (
-            f"*📋 HISTORY — {mode.upper()}*\n"
-            f"Filter: `{time_range.upper()}`\n\n"
-            f"📊 `{total}` trades | {wr_icon} WR: `{wr:.1f}%`\n"
-            f"   Wins: `{wins}` | Losses: `{losses}`\n"
-            f"   PnL: `{pnl_str}` ({pnl_sum:+.1f}%)\n\n"
+            f"📋 HISTORY — {mode.upper()}\n"
+            f"Filter: {time_range.upper()}\n\n"
+            f"📊 {total} trades | {wr_icon} WR: {wr:.1f}%\n"
+            f"   Wins: {wins} | Losses: {losses}\n"
+            f"   PnL: {pnl_str} ({pnl_sum:+.1f}%)\n\n"
         )
 
         if not trades:
             text += "_No trades in this range._"
         else:
-            text += "*Recent Trades:*\n"
+            text += "*Recent Trades:\n"
             text += "─────────────────────\n"
             for t in trades[-15:]:
                 side_icon = "🟢" if t.get("side") == "LONG" else "🔴"

@@ -9,17 +9,17 @@ class WalletPage(MenuPage):
 
     def build(self) -> tuple[str, InlineKeyboardMarkup]:
         text = (
-            "*🔗 WALLET SETUP*\n\n"
+            "*🔗 WALLET SETUP\n\n"
             "Hubungkan exchange untuk live trading.\n"
-            "Supported: *Binance Futures* & *Hyperliquid*.\n\n"
+            "Supported: Binance Futures & Hyperliquid.\n\n"
 
-            "*📋 Langkah Setup:*\n"
+            "*📋 Langkah Setup:\n"
             "1. Pilih exchange (Binance / Hyperliquid)\n"
             "2. Input API Key + Secret via keyboard\n"
             "3. Test connection → ✅ Connected\n\n"
 
-            "*🔐 API Key Permissions:*\n"
-            "• Binance: enable *Futures* trading\n"
+            "*🔐 API Key Permissions:\n"
+            "• Binance: enable Futures trading\n"
             "• Hyperliquid: sign with wallet\n\n"
 
             "⚠️ Keys disimpan lokal only.\n"

@@ -47,33 +47,33 @@ class BalancePage(MenuPage):
 
         def hl_row(label, value, key):
             icon = "👉 " if key == hl else "  "
-            return f"{icon}{label}: `{value}`"
+            return f"{icon}{label}: {value}"
 
         text = (
-            f"*💰 BALANCE & RISK*\n\n"
-            f"_Mode: `{'DRY RUN' if current_mode == 'dry_run' else 'LIVE'}`_\n\n"
+            f"💰 BALANCE & RISK\n\n"
+            f"_Mode: {'DRY RUN' if current_mode == 'dry_run' else 'LIVE'}_\n\n"
 
-            "──── *DRY RUN* ────\n"
-            f"  Balance: `${dr_bal:,.2f}`\n"
-            f"  Started: `${dr_init:,.2f}`\n"
-            f"  PnL: `{dr_pnl_str}` ({dr_pnl_pct:+.2f}%)\n"
-            f"  Trades: `{dr_trades}`\n\n"
+            "──── DRY RUN ────\n"
+            f"  Balance: *${dr_bal:,.2f}\n"
+            f"  Started: *${dr_init:,.2f}\n"
+            f"  PnL: {dr_pnl_str} ({dr_pnl_pct:+.2f}%)\n"
+            f"  Trades: {dr_trades}\n\n"
 
-            "──── *LIVE ({exchange_type.upper()})* ────\n"
-            f"  Balance: `${live_bal:,.2f}` _(sync dari wallet)_\n"
-            f"  Started: `${live_init:,.2f}`\n"
-            f"  PnL: `{live_pnl_str}`\n"
-            f"  Trades: `{live_trades}`\n\n"
+            "──── LIVE ({exchange_type.upper()}) ────\n"
+            f"  Balance: *${live_bal:,.2f} _(sync dari wallet)_\n"
+            f"  Started: *${live_init:,.2f}\n"
+            f"  PnL: {live_pnl_str}\n"
+            f"  Trades: {live_trades}\n\n"
 
-            "──── *TRADE SIZE* ────\n"
+            "──── TRADE SIZE ────\n"
             f"{hl_row('Size/trade', f'{size_pct}%', 'size')}\n"
             f"{hl_row('Max orders/cycle', str(max_orders), 'max_orders')}\n"
             f"{hl_row('Max open positions', str(max_pos), 'max_pos')}\n\n"
 
-            "──── *RISK LIMITS* ────\n"
+            "──── RISK LIMITS ────\n"
             f"{hl_row('Daily loss limit', f'${daily_loss_limit}', 'daily_loss')}\n\n"
 
-            "──── *ACTIONS* ────\n"
+            "──── ACTIONS ────\n"
             "  🔄 Reset Dry Run → $100\n\n"
             "_Tap setting untuk ubah nilainya._"
         )

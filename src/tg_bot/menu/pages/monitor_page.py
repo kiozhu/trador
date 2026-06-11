@@ -70,21 +70,21 @@ class MonitorPage(MenuPage):
         recent = self.trade_log.recent(5, mode=mode) if self.trade_log else []
 
         text = (
-            f"*📡 TRADOR MONITOR*\n\n"
-            f"{status_icon} Status: `{'AKTIF' if trading else 'STOPPED'}` | {mode_icon}\n"
-            f"Balance: `${balance:,.2f}` | PnL: `{pnl_str}` ({pnl_pct:+.2f}%)\n\n"
+            f"📡 TRADOR MONITOR\n\n"
+            f"{status_icon} Status: {'AKTIF' if trading else 'STOPPED'} | {mode_icon}\n"
+            f"Balance: *${balance:,.2f} | PnL: {pnl_str} ({pnl_pct:+.2f}%)\n\n"
 
-            f"*⚙️ SETTINGS SYNC*\n"
-            f"  Strategy: `{strat_display}`\n"
-            f"  Size/trade: `{size_pct}%`\n"
-            f"  Max orders/cycle: `{max_orders}`\n"
-            f"  Max positions: `{max_pos}`\n"
-            f"  Daily loss limit: `$ {daily_loss:.0f}`\n"
-            f"  Pool size: `{pool_size}` symbols\n"
-            f"  Cycle interval: `{cycle_interval}s`\n\n"
+            f"⚙️ SETTINGS SYNC\n"
+            f"  Strategy: {strat_display}\n"
+            f"  Size/trade: {size_pct}%\n"
+            f"  Max orders/cycle: {max_orders}\n"
+            f"  Max positions: {max_pos}\n"
+            f"  Daily loss limit: *$ {daily_loss:.0f}\n"
+            f"  Pool size: {pool_size} symbols\n"
+            f"  Cycle interval: {cycle_interval}s\n\n"
 
-            f"*📊 POSITIONS*\n"
-            f"  Open: `{open_count}` | Max: `{max_pos}`\n"
+            f"📊 POSITIONS\n"
+            f"  Open: {open_count} | Max: {max_pos}\n"
         )
 
         # Open positions detail
@@ -98,11 +98,11 @@ class MonitorPage(MenuPage):
                 lev = p.get("leverage", 1)
                 text += f"  {side} {sym} (x{lev}) {pnl_str2}\n"
 
-        text += f"\n*🔍 SCANNERS*\n{scanner_text}\n"
+        text += f"\n*🔍 SCANNERS\n{scanner_text}\n"
 
         # Recent trades with full details
         if recent:
-            text += "\n*🕐 RECENT CLOSED*\n"
+            text += "\n*🕐 RECENT CLOSED\n"
             for t in reversed(recent):
                 pnl_val = t.get("pnl_pct", 0)
                 icon = "✅" if pnl_val >= 0 else "❌"
@@ -126,11 +126,11 @@ class MonitorPage(MenuPage):
                     except (ValueError, TypeError):
                         pass
                 pnl_amt_str = f"+${pnl_amt:.2f}" if pnl_amt >= 0 else f"-${abs(pnl_amt):.2f}"
-                text += f"{icon} `{ts_str}` {side} {sym} (x{lev})\n"
-                text += f"   Entry: `${entry:.4f}` → Exit: `${exit_p:.4f}`\n"
-                text += f"   Fee: `${fee:.4f}` | PnL: {pnl_amt_str} ({pnl_val:+.2f}%) [{exit_r}]\n"
+                text += f"{icon} {ts_str} {side} {sym} (x{lev})\n"
+                text += f"   Entry: ${entry:.4f} → Exit: ${exit_p:.4f}\n"
+                text += f"   Fee: *${fee:.4f} | PnL: {pnl_amt_str} ({pnl_val:+.2f}%) [{exit_r}]\n"
         else:
-            text += "\n*🕐 RECENT CLOSED*\n  Belum ada closed trade.\n"
+            text += "\n*🕐 RECENT CLOSED\n  Belum ada closed trade.\n"
 
         keyboard = [
             [InlineKeyboardButton("🔄 Refresh", callback_data="page:monitor")],

@@ -8,7 +8,7 @@ class DirectionPage(MenuPage):
     name = "direction"
 
     def build(self) -> tuple[str, InlineKeyboardMarkup]:
-        text = "📐 *Direction*\n\nPilih arah trading."
+        text = "📐 *Direction\n\nPilih arah trading."
         keyboard = [
             [InlineKeyboardButton("📈 Long — Buy only", callback_data="action:dir_long")],
             [InlineKeyboardButton("📉 Short — Sell only", callback_data="action:dir_short")],

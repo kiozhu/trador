@@ -86,20 +86,20 @@ class SettingsPage(MenuPage):
         enabled_count = len(enabled_symbols) if enabled_symbols else 0
 
         text = (
-            "*⚙️ SETTINGS*\n\n"
-            f"Mode: `{mode.upper()}` | Trading: `{'ON' if trading else 'OFF'}`\n\n"
+            "*⚙️ SETTINGS\n\n"
+            f"Mode: {mode.upper()} | Trading: {'ON' if trading else 'OFF'}\n\n"
             "─── 🤖 LLM Smart ───\n"
-            f"  Status: `{'✅ ON' if llm_on else '❌ OFF'}`\n"
-            f"  API Key: `{'✅ Set' if llm_api_key else '⛔ Not Set'}`\n"
-            f"  Provider: `{llm_base_url or 'Not configured'}`\n\n"
+            f"  Status: {'✅ ON' if llm_on else '❌ OFF'}\n"
+            f"  API Key: {'✅ Set' if llm_api_key else '⛔ Not Set'}\n"
+            f"  Provider: {llm_base_url or 'Not configured'}\n\n"
             "─── ⚡ Trading Params ───\n"
-            f"  ⏱️ Cycle Interval: `{cycle_interval}s`\n"
+            f"  ⏱️ Cycle Interval: {cycle_interval}s\n"
             f"     → scan tiap {cycle_interval} detik\n"
-            f"  📋 Max Orders/Cycle: `{max_orders}`\n"
-            f"  🔢 Max Positions: `{max_pos}`\n"
-            f"  📉 Daily Loss Limit: `$ {daily_loss_limit:.0f}`\n\n"
+            f"  📋 Max Orders/Cycle: {max_orders}\n"
+            f"  🔢 Max Positions: {max_pos}\n"
+            f"  📉 Daily Loss Limit: *$ {daily_loss_limit:.0f}\n\n"
             f"─── 🪙 Symbol Pool ───\n"
-            f"  Enabled: `{enabled_count}`/`{len(COIN_LIST)}` coins\n"
+            f"  Enabled: {enabled_count}/{len(COIN_LIST)} coins\n"
         )
 
         keyboard = [
@@ -115,11 +115,11 @@ class SettingsPage(MenuPage):
 
     def _build_llm_page(self, llm_on, api_key, base_url, model) -> tuple[str, InlineKeyboardMarkup]:
         text = (
-            "*🤖 LLM Smart Settings*\n\n"
+            "*🤖 LLM Smart Settings\n\n"
             "LLM Smart = Hermes kasih saran position size\n"
             "berdasarkan analisis market regime.\n\n"
-            f"Status: `{'✅ ON' if llm_on else '❌ OFF'}`\n"
-            f"API Key: `{'✅ Set' if api_key else '⛔ Not Set'}`\n\n"
+            f"Status: {'✅ ON' if llm_on else '❌ OFF'}\n"
+            f"API Key: {'✅ Set' if api_key else '⛔ Not Set'}\n\n"
             "─── Provider ───"
         )
         buttons = []
@@ -143,9 +143,9 @@ class SettingsPage(MenuPage):
             filtered = COIN_LIST
 
         text = (
-            "*🪙 Symbol Pool — tap to toggle*\n\n"
+            "*🪙 Symbol Pool — tap to toggle\n\n"
             "✅ = enabled | ❌ = disabled\n"
-            f"Total: `{len(COIN_LIST)}` coins (Binance Futures)\n\n"
+            f"Total: {len(COIN_LIST)} coins (Binance Futures)\n\n"
             "_Tap letter to filter, tap coin to toggle._"
         )
 
@@ -170,7 +170,7 @@ class SettingsPage(MenuPage):
 
         # Show count of filtered coins
         if filter_letter:
-            rows.append([InlineKeyboardButton(f"🔍 {filter_letter}* ({len(filtered)} coins) — tap ALL", callback_data="set:symbol_filter:")])
+            rows.append([InlineKeyboardButton(f"🔍 {filter_letter} ({len(filtered)} coins) — tap ALL", callback_data="set:symbol_filter:")])
 
         # Coin grid (filtered)
         for i in range(0, len(filtered), 3):
@@ -187,11 +187,11 @@ class SettingsPage(MenuPage):
     def _build_cycle_page(self, current: int) -> tuple[str, InlineKeyboardMarkup]:
         options = [5, 10, 15, 30, 60, 120]
         text = (
-            "*⏱️ Cycle Interval*\n\n"
+            "*⏱️ Cycle Interval\n\n"
             "berapa detik antar scan cycle.\n"
             "Semakin kecil = lebih responsif tapi\n"
             "lebih banyak API calls.\n\n"
-            f"Current: `{current}s`\n\n"
+            f"Current: {current}s\n\n"
             "Pilih interval:"
         )
         rows = []

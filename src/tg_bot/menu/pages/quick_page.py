@@ -12,9 +12,9 @@ class QuickPage(MenuPage):
 
     def build(self) -> tuple[str, InlineKeyboardMarkup]:
         text = (
-            "*⚡ QUICK ACTIONS*\n\n"
-            "🛑 *Cancel All* — Batalkan semua open order\n"
-            "🔴 *Close All* — Tutup semua posisi (dengan konfirmasi)\n\n"
+            "*⚡ QUICK ACTIONS\n\n"
+            "🛑 Cancel All — Batalkan semua open order\n"
+            "🔴 Close All — Tutup semua posisi (dengan konfirmasi)\n\n"
             "⚠️ Close All akan menutup seluruh posisi yang terbuka.\n"
             "Pastikan sebelum melakukan ini.\n"
         )

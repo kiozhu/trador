@@ -94,11 +94,11 @@ class MenuRouter:
                 if active:
                     # Show confirmation with options
                     text = (
-                        f"*🛑 STOP LIVE TRADING*\n\n"
-                        f"⚠️ Kamu sedang punya *{len(active)} posisi terbuka*.\n\n"
+                        f"🛑 STOP LIVE TRADING\n\n"
+                        f"⚠️ Kamu sedang punya {len(active)} posisi terbuka.\n\n"
                         f"Pilih aksi:\n"
-                        f"  1. *Hold* — biarkan posisi terbuka, stop auto trading saja\n"
-                        f"  2. *Close All* — tutup semua posisi sekarang\n\n"
+                        f"  1. Hold — biarkan posisi terbuka, stop auto trading saja\n"
+                        f"  2. Close All — tutup semua posisi sekarang\n\n"
                         f"⚠️ Real money at risk!"
                     )
                     keyboard = [
@@ -150,14 +150,14 @@ class MenuRouter:
                 wallet = state.get("wallet_connected", False)
 
                 text = (
-                    "*🚀 START LIVE TRADING*\n\n"
-                    f"⚠️ *Konfirmasi sebelum mulai:*\n\n"
+                    "*🚀 START LIVE TRADING\n\n"
+                    f"⚠️ Konfirmasi sebelum mulai:\n\n"
                     f"  Wallet: {'✅ Connected' if wallet else '❌ Not connected'}\n"
-                    f"  Balance: `${balance:,.2f}`\n"
-                    f"  Strategy: `{strategy}`\n"
-                    f"  Size/trade: `{size}%`\n"
-                    f"  Max orders/cycle: `{max_orders}`\n\n"
-                    f"*Ini akan mulai auto trading dengan real money.*\n"
+                    f"  Balance: ${balance:,.2f}\n"
+                    f"  Strategy: {strategy}\n"
+                    f"  Size/trade: {size}%\n"
+                    f"  Max orders/cycle: {max_orders}\n\n"
+                    f"Ini akan mulai auto trading dengan real money.\n"
                     f"Yakin ingin mulai?"
                 )
                 keyboard = [
@@ -193,7 +193,7 @@ class MenuRouter:
                 if not size_ok:
                     missing.append("set trade size di Balance")
                 text = (
-                    f"*❌ Cannot switch to LIVE*\n\n"
+                    f"❌ Cannot switch to LIVE\n\n"
                     f"Prerequisites not met:\n"
                     f"  • Connect wallet: {'✅' if wallet_ok else '❌'}\n"
                     f"  • Set trade size: {'✅' if size_ok else '❌'}\n\n"
@@ -277,7 +277,7 @@ class MenuRouter:
             is_active = active and active.get("id") == strategy_id
             from ..keyboards import strategy_detail_keyboard
             reply_markup = strategy_detail_keyboard(strategy_id, is_active)
-            text = f"⚙️ *{strategy.get('name', strategy_id)}*\n\nPilih parameter:"
+            text = f"⚙️ {strategy.get('name', strategy_id)}\n\nPilih parameter:"
             await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
@@ -286,7 +286,7 @@ class MenuRouter:
             strategy_id = data.split(":")[1]
             if self.loader:
                 strategy = self.loader.get(strategy_id)
-                text = f"📊 *{strategy.get('name', strategy_id)}*\n\n_Coming soon: performance stats_"
+                text = f"📊 {strategy.get('name', strategy_id)}\n\n_Coming soon: performance stats_"
                 await query.answer("Performance", show_alert=False)
                 await query.edit_message_text(text, parse_mode=None)
             return
@@ -296,7 +296,7 @@ class MenuRouter:
             strategy_id = data.split(":")[1]
             from ..keyboards import confirm_cancel_keyboard
             reply_markup = confirm_cancel_keyboard()
-            text = f"🗑 *Delete strategy?*\n\n`{strategy_id}`\n\nThis cannot be undone."
+            text = f"🗑 Delete strategy?\n\n{strategy_id}\n\nThis cannot be undone."
             await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
             return
 
@@ -421,8 +421,8 @@ class MenuRouter:
             ]
             await query.answer()
             await query.edit_message_text(
-                f"*📉 Daily Loss Limit*\n\n"
-                f"Saat ini: `$ {cur}`\n\n"
+                f"📉 Daily Loss Limit\n\n"
+                f"Saat ini: $ {cur}\n\n"
                 f"Pilih batas maksimal kerugian per hari:",
                 parse_mode=None,
                 reply_markup=InlineKeyboardMarkup(keyboard),
@@ -476,13 +476,13 @@ class MenuRouter:
             ]
             await query.answer()
             await query.edit_message_text(
-                "*💵 Add Fund — Hyperliquid*\n\n"
+                "*💵 Add Fund — Hyperliquid\n\n"
                 "Hyperliquid gunakan USDC sebagai margin.\n\n"
-                "*1. Deposit USDC from External*\n"
+                "*1. Deposit USDC from External\n"
                 "• Hyperliquid → Portfolio → Deposit\n"
                 "• Transfer USDC via wallet (ERC-20)\n"
                 "• Minimal ~$10\n\n"
-                "*2. Auto-Sync Balance*\n"
+                "*2. Auto-Sync Balance\n"
                 "• Hubungkan wallet via API key\n"
                 "• Balance auto-sync dari wallet kamu\n\n"
                 "_Deposit masuk ke Hyperliquid wallet._",
@@ -525,9 +525,9 @@ class MenuRouter:
             ]
             await query.answer()
             await query.edit_message_text(
-                "*📤 Send Fund — Hyperliquid*\n\n"
+                "*📤 Send Fund — Hyperliquid\n\n"
                 "Withdraw USDC ke external wallet.\n\n"
-                "*Withdraw USDC*\n"
+                "*Withdraw USDC\n"
                 "• Hyperliquid → Portfolio → Withdraw\n"
                 "• Masukkan alamat wallet tujuan\n"
                 "• Pilih jaringan ERC-20\n"
@@ -553,14 +553,14 @@ class MenuRouter:
             ]
             await query.answer()
             await query.edit_message_text(
-                "*💵 Add Fund — Binance Futures*\n\n"
+                "*💵 Add Fund — Binance Futures\n\n"
                 "Ada 2 cara menambah balance:\n\n"
-                "*1. Binance Spot → Futures*\n"
+                "*1. Binance Spot → Futures\n"
                 "• Buka Binance → Wallet → Futures\n"
                 "• Pilih USDT-M Futures\n"
                 "• Klik Transfer → dari Spot ke Futures\n"
                 "• Minimal $10\n\n"
-                "*2. Deposit dari External*\n"
+                "*2. Deposit dari External\n"
                 "• Binance → Deposit → USDT (TRC20/ERC20)\n"
                 "• Transfer ke alamat deposit kamu\n"
                 "• Setelah masuk, transfer ke Futures\n\n"
@@ -612,14 +612,14 @@ class MenuRouter:
             ]
             await query.answer()
             await query.edit_message_text(
-                "*📤 Send Fund — Binance Futures*\n\n"
+                "*📤 Send Fund — Binance Futures\n\n"
                 "Ada 2 cara menarik/mengurangi balance:\n\n"
-                "*1. Futures → Spot*\n"
+                "*1. Futures → Spot\n"
                 "• Binance → Wallet → Futures\n"
                 "• Pilih USDT-M Futures\n"
                 "• Klik Transfer → dari Futures ke Spot\n"
                 "• Bisa trading spot atau convert ke other coins\n\n"
-                "*2. Withdraw ke External*\n"
+                "*2. Withdraw ke External\n"
                 "• Binance → Wallet → Spot → Withdraw\n"
                 "• Pilih jaringan (TRC20/ERC20)\n"
                 "• Masukkan alamat tujuan\n"
@@ -693,19 +693,19 @@ class MenuRouter:
                 if resp.status_code < 300:
                     self.state_mgr.set("llm_enabled", True)
                     await query.edit_message_text(
-                        "*✅ LLM Connected!*\n\n"
+                        "*✅ LLM Connected!\n\n"
                         f"Status: ON\nProvider: {base_url.split('/')[2]}\n"
                         "Smart mode aktif — Hermes akan\nberi saran position size tiap cycle.",
                         parse_mode=None,
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:settings")]]))
                 else:
                     await query.edit_message_text(
-                        f"*❌ LLM Error*\n\n`{resp.status_code}: {resp.text[:200]}`",
+                        f"❌ LLM Error\n\n{resp.status_code}: {resp.text[:200]}",
                         parse_mode=None,
                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:settings")]]))
             except Exception as e:
                 await query.edit_message_text(
-                    f"*❌ Connection Failed*\n\n`{e}`",
+                    f"❌ Connection Failed\n\n{e}",
                     parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:settings")]]))
             return
@@ -772,7 +772,7 @@ class MenuRouter:
         elif key == "llm_key":
             await query.answer()
             await query.edit_message_text(
-                "*🔑 LLM API Key*\n\n"
+                "*🔑 LLM API Key\n\n"
                 "Kirim API Key kamu di chat ini.\n"
                 "Bisa pakai MiniMax, OpenAI, atau provider lain.\n"
                 "Ketik langsung di chat, jangan pake /.\n"
@@ -872,22 +872,25 @@ class MenuRouter:
             worst_loss = report["worst_scenario_loss_usd"]
 
             lines = [
-                f"*🧪 STRESS TEST — {scenario_label}*\\n\\n",
-                f"Overall: {overall}\\n",
-                f"Worst: {worst}\\n",
-                f"Total Est. Loss: ${total_loss:,.2f}\\n",
-                f"Worst Scenario Loss: ${worst_loss:,.2f}\\n\\n",
-                "*Scenarios:*\\n",
+                f"🧪 STRESS TEST — {scenario_label}",
+                "",
+                f"Overall  : {overall}",
+                f"Worst    : {worst}",
+                f"Total Est. Loss: ${total_loss:,.2f}",
+                f"Worst Scenario Loss: ${worst_loss:,.2f}",
+                "",
+                "Scenarios:",
             ]
             for s in report["scenarios"]:
                 icon = "✅" if s["passed"] else "🚨"
                 lines.append(
                     f"{icon} {s['scenario'].upper()} — Loss: {s['estimated_loss_pct']:.2f}% "
-                    f"(${s['estimated_loss_usd']:,.2f})\\n"
+                    f"(${s['estimated_loss_usd']:,.2f})"
                 )
-                lines.append(f"   💡 {s['recommendation'][:80]}\\n\\n")
+                lines.append(f"   💡 {s['recommendation'][:80]}")
 
-            lines.append("_Tekan ◀️ Back untuk kembali ke Risk page._")
+            lines.append("")
+            lines.append("◀️ Back untuk kembali ke Risk page.")
             text = "".join(lines)
 
             keyboard = [[InlineKeyboardButton("◀️ Back", callback_data="page:risk")]]
@@ -942,12 +945,12 @@ class MenuRouter:
         if key == "binance":
             self.state_mgr.set("exchange", "binance")
             text = (
-                "*🔗 Binance Selected*\n\n"
+                "*🔗 Binance Selected\n\n"
                 "Input API Key + Secret:\n"
                 "1. 🔐 Input API Key\n"
                 "2. 🔏 Input API Secret\n"
                 "3. 🧪 Test Connection\n\n"
-                "📌 Enable *Enable Futures* saat buat API key."
+                "📌 Enable Enable Futures saat buat API key."
             )
             keyboard = [
                 [InlineKeyboardButton("🔐 Input API Key", callback_data="wallet:input_key")],
@@ -963,7 +966,7 @@ class MenuRouter:
         if key == "hyperliquid":
             self.state_mgr.set("exchange", "hyperliquid")
             text = (
-                "*⚡ Hyperliquid Selected*\n\n"
+                "*⚡ Hyperliquid Selected\n\n"
                 "Input API Key + Secret:\n"
                 "1. 🔐 Input API Key\n"
                 "2. 🔏 Input API Secret\n"
@@ -984,7 +987,7 @@ class MenuRouter:
             self.state_mgr.set("pending_input", "wallet_api_key")
             await query.answer()
             await query.edit_message_text(
-                "*🔐 Input API Key*\n\n"
+                "*🔐 Input API Key\n\n"
                 "Kirim API Key kamu di chat ini.\n"
                 "_Ketik aja langsung di chat, jangan pake /_\n"
                 "Tekan ◀️ Back kalau mau cancel.",
@@ -999,7 +1002,7 @@ class MenuRouter:
             self.state_mgr.set("pending_input", "wallet_api_secret")
             await query.answer()
             await query.edit_message_text(
-                "*🔏 Input API Secret*\n\n"
+                "*🔏 Input API Secret\n\n"
                 "Kirim API Secret kamu di chat ini.\n"
                 "_JANGAN share ke siapapun!_\n"
                 "Ketik aja langsung di chat.\n"
@@ -1029,18 +1032,18 @@ class MenuRouter:
                     bal = ex.fetch_balance({"type": "future"})
                     total = bal.get("total", {}).get("USDT", 0)
                     text = (
-                        f"*✅ Binance Connected!*\n\n"
-                        f"USDT Balance: `${total:.2f}`\n"
+                        f"✅ Binance Connected!\n\n"
+                        f"USDT Balance: ${total:.2f}\n"
                         f"Wallet: ✅ Connected"
                     )
                     self.state_mgr.set("wallet_connected", True)
                 else:
-                    text = "*✅ Hyperliquid Connected!*\n\nWallet: ✅ Connected"
+                    text = "*✅ Hyperliquid Connected!\n\nWallet: ✅ Connected"
                 await query.edit_message_text(text, parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]))
             except Exception as e:
                 await query.edit_message_text(
-                    f"*❌ Connection Failed*\n\n`{e}`\n\n"
+                    f"❌ Connection Failed\n\n{e}\n\n"
                     "Check API key/secret and try again.",
                     parse_mode=None,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]))
@@ -1055,8 +1058,8 @@ class MenuRouter:
             if env_example.exists():
                 content = env_example.read_text()
             text = (
-                "*📋 .env.example*\n\n"
-                "```\n" + content[:1800] + "```"
+                "*📋 .env.example\n\n"
+                "\n" + content[:1800] + ""
             )
             keyboard = [[InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]]
             await query.answer()
@@ -1213,7 +1216,7 @@ class MenuRouter:
                     await query.answer()
                     try:
                         await query.edit_message_text(
-                            f"*📊 Partial Close — {sym}*\n\nPilih persentase untuk ditutup:",
+                            f"📊 Partial Close — {sym}\n\nPilih persentase untuk ditutup:",
                             parse_mode=None,
                             reply_markup=InlineKeyboardMarkup(keyboard),
                         )
@@ -1438,8 +1441,8 @@ async def _handle_text_input(update: Update, _: ContextTypes.DEFAULT_TYPE):
         router.state_mgr.set("llm_api_key", text)
         router.state_mgr.set("pending_input", "")
         await update.message.reply_text(
-            f"*✅ LLM API Key saved!*\n\n"
-            f"Key: `{text[:8]}...`\n\n"
+            f"✅ LLM API Key saved!\n\n"
+            f"Key: {text[:8]}...\n\n"
             "Tekan TEST di menu Settings untuk verify.",
             parse_mode=None,
         )
@@ -1457,7 +1460,7 @@ async def _handle_text_input(update: Update, _: ContextTypes.DEFAULT_TYPE):
         router.state_mgr.set("pending_input", "")
         current = router.state_mgr.get().get("live_balance", 0)
         router.state_mgr.set("live_balance", current + amount)
-        await update.message.reply_text(f"*✅ Added ${amount:.2f}*\n\nNew balance: ${current + amount:.2f}", parse_mode=None)
+        await update.message.reply_text(f"✅ Added ${amount:.2f}\n\nNew balance: ${current + amount:.2f}", parse_mode=None)
         return
 
     if pending == "send_fund":
@@ -1473,19 +1476,19 @@ async def _handle_text_input(update: Update, _: ContextTypes.DEFAULT_TYPE):
         current = router.state_mgr.get().get("live_balance", 0)
         new_bal = max(0, current - amount)
         router.state_mgr.set("live_balance", new_bal)
-        await update.message.reply_text(f"*✅ Sent ${amount:.2f}*\n\nNew balance: ${new_bal:.2f}", parse_mode=None)
+        await update.message.reply_text(f"✅ Sent ${amount:.2f}\n\nNew balance: ${new_bal:.2f}", parse_mode=None)
         return
 
     if pending == "wallet_api_key":
         router.state_mgr.set("wallet_api_key", text)
         router.state_mgr.set("pending_input", "")
-        await update.message.reply_text(f"*✅ API Key saved!*\n\n`{text[:8]}...`", parse_mode=None)
+        await update.message.reply_text(f"✅ API Key saved!\n\n{text[:8]}...", parse_mode=None)
         return
 
     if pending == "wallet_api_secret":
         router.state_mgr.set("wallet_api_secret", text)
         router.state_mgr.set("pending_input", "")
-        await update.message.reply_text("*✅ API Secret saved!*", parse_mode=None)
+        await update.message.reply_text("*✅ API Secret saved!", parse_mode=None)
         return
 
     if pending == "llm_key":
