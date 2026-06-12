@@ -259,6 +259,23 @@ class MenuRouter:
         elif data == "action:smart_off":
             self.state_mgr.set("smart_mode", False)
             await query.answer("🧠 Smart Mode: DISABLED", show_alert=True)
+
+        # ── Re-scan open positions ────────────────────────────────────────
+        elif data == "action:rescan_open":
+            auto_trader = _.bot_data.get("auto_trader") if _ else None
+            if not auto_trader:
+                await query.answer("❌ Bot not ready", show_alert=True)
+                return
+            await query.answer("🔄 Re-scanning open positions...", show_alert=False)
+            try:
+                count = await auto_trader.focus_open_positions()
+                await query.answer(f"✅ Re-scan done: {count} positions reviewed", show_alert=True)
+            except Exception as e:
+                log.error("rescan_open failed: %s", e)
+                await query.answer(f"❌ Re-scan failed: {e}", show_alert=True)
+            await self._navigate_to(update, "monitor")
+            return
+
         else:
             return
 
@@ -1628,6 +1645,18 @@ class MenuRouter:
 
         if page_key == "back":
             page_key = self.nav.pop() or "main"
+
+        # ── Monitor: fetch live balance before building ────────────────────
+        if page_key == "monitor":
+            state = self.state_mgr.get()
+            if state.get("mode") == "live":
+                api_key = state.get("wallet_api_key", "")
+                api_secret = state.get("wallet_api_secret", "")
+                if api_key and api_secret:
+                    from .pages.balance_page import _fetch_binance_live_balance
+                    result = _fetch_binance_live_balance(api_key, api_secret)
+                    if result["success"]:
+                        self.state_mgr.set("live_balance", result["total"])
 
         # History and Positions need mode context — build directly
         if page_key == "history":

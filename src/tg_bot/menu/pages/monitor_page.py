@@ -133,7 +133,8 @@ class MonitorPage(MenuPage):
             text += "\n🕐 RECENT CLOSED\n  Belum ada closed trade.\n"
 
         keyboard = [
-            [InlineKeyboardButton("🔄 Refresh", callback_data="page:monitor")],
+            [InlineKeyboardButton("🔄 Refresh", callback_data="page:monitor"),
+             InlineKeyboardButton("🔄 Re-scan Open", callback_data="action:rescan_open")],
             [InlineKeyboardButton("◀️ Back to Menu", callback_data="page:main")],
         ]
         return text, InlineKeyboardMarkup(keyboard)
