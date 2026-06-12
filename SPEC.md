@@ -687,4 +687,37 @@ Trador maintains its own memory in `memory/` directory.
 4. **Trador ignores expired suggestions** — `expires_at` check is mandatory
 5. **Hard risk limits cannot be exceeded** — even if Hermes suggests it
 6. **File writes are atomic** — temp file + rename pattern
+
+---
+
+## 14. Changelog
+
+### v2 — Emergency Stop Fixes + Startup Sync (2026-06-12)
+
+**Bug Fixes:**
+- `stop_close_all`: Fix close side — use `side` field instead of `size < 0` (CCXT returns `size=None`, `contracts=8.0` positive for both long & short)
+- `stop_close_all`: Fix size field — use `contracts` not `size` (CCXT Binance returns `size=None`)
+- `stop_close_all`: Add async/await, single exchange instance, Ed25519 support
+- `pos_close_all`, `pos_partial_exec`: Same fixes applied
+- `action:stop_close_all`: Add cancel all orders before closing positions
+
+**Startup Sync (bidirectional):**
+- Direction 1: Stale trades (in file but not on Binance) → close them
+- Direction 2: Extra positions (on Binance but not in file) → close them
+- Reload AutoTrader positions after sync
+
+**Emergency Stop Flow:**
+1. Set `trading_enabled = False`
+2. Read credentials from `.env` + state.json
+3. Build CCXT exchange with Ed25519 support
+4. Cancel ALL open orders across 12 symbols
+5. Close ALL open positions (use `side` field for direction)
+6. Update `trade_history.json` with `status=closed`, `exit_reason=manual_stop`
+7. Reply with count of cancelled/closed
+
+**Credentials:**
+- `.env` not in git history ✅
+- `.env` staged → unstaged immediately ✅
+- Wallet menu syncs to both state.json AND .env ✅
+- Engine reloads via `reload_from_env()` without restart ✅
 7. **No database** — JSON files only for simplicity
