@@ -31,7 +31,7 @@ class MenuRouter:
         # ── All pages registered in nav ─────────────────────────────────────────
         pages = {
             "main": MainPage(),
-            "status": StatusPage(state_mgr, perf, trade_log, loader),
+            "status": StatusPage(state_mgr, perf, trade_log, loader, engine=exchange),
             "help": HelpPage(),
             "positions": PositionsPage(trade_log, state_mgr),
             "strategy": StrategyPage(loader),
