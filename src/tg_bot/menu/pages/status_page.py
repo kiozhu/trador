@@ -8,11 +8,12 @@ class StatusPage(MenuPage):
     name = "status"
     back_callback = "main"
 
-    def __init__(self, state_mgr, perf, trade_log, loader=None):
+    def __init__(self, state_mgr, perf, trade_log, loader=None, engine=None):
         self.state_mgr = state_mgr
         self.perf = perf
         self.trade_log = trade_log
         self._loader = loader
+        self._engine = engine  # TradingEngine for live Binance data
 
     def build(self) -> tuple[str, InlineKeyboardMarkup]:
         state = self.state_mgr.get()
@@ -21,6 +22,41 @@ class StatusPage(MenuPage):
         mode_emoji = "🔴 LIVE" if current_mode == "live" else "🟡 DRY RUN"
         direction = state.get("direction", "both")
         wallet_connected = state.get("wallet_connected", False)
+
+        # ── LIVE: Fetch real Binance data ─────────────────────────────────
+        if current_mode == "live":
+            lv_cur = state.get("live_balance", 0) or 0
+            live_open_positions = state.get("open_positions", [])
+            lv_open = len(live_open_positions)
+            live_unreal = state.get("live_unrealized_pnl", 0) or 0
+            # Calculate PnL from live_balance vs initial
+            lv_init = state.get("live_initial_balance", lv_cur) or lv_cur
+            lv_pnl = lv_cur - lv_init
+            lv_pnl_str = f"+{lv_pnl:,.2f}" if lv_pnl >= 0 else f"{lv_pnl:,.2f}"
+            lv_pnl_emoji = "📈" if lv_pnl >= 0 else "📉"
+            # Win rate from closed trades in file (if any with pnl_pct)
+            lv_trades = self.trade_log.all(mode="live") if self.trade_log else []
+            wins = sum(1 for t in lv_trades if t.get("pnl_pct", 0) > 0)
+            total = len(lv_trades)
+            lv_wr = round(wins / total * 100, 1) if total > 0 else 0.0
+            lv_wr_emoji = "🟢" if lv_wr >= 60 else "🟡" if lv_wr >= 45 else "🔴"
+            # Unrealized PnL shown separately
+            unreal_str = f"+{live_unreal:.2f}" if live_unreal >= 0 else f"{live_unreal:.2f}"
+        else:
+            # DRY RUN
+            lv_cur = state.get("live_balance", 0) or 0
+            lv_init = state.get("live_initial_balance", lv_cur) or lv_cur
+            lv_pnl = lv_cur - lv_init
+            lv_pnl_str = f"+{lv_pnl:,.2f}" if lv_pnl >= 0 else f"{lv_pnl:,.2f}"
+            lv_pnl_emoji = "📈" if lv_pnl >= 0 else "📉"
+            lv_open = len(self.trade_log.get_active(mode="live")) if self.trade_log else 0
+            lv_trades = self.trade_log.all(mode="live") if self.trade_log else []
+            wins = sum(1 for t in lv_trades if t.get("pnl_pct", 0) > 0)
+            total = len(lv_trades)
+            lv_wr = round(wins / total * 100, 1) if total > 0 else 0.0
+            lv_wr_emoji = "🟢" if lv_wr >= 60 else "🟡" if lv_wr >= 45 else "🔴"
+            unreal_str = "—"
+            live_unreal = 0
 
         # Active strategies
         active_strats = []
@@ -68,17 +104,6 @@ class StatusPage(MenuPage):
         dr_wr = calc_wr(dr_trades)
         dr_wr_emoji = "🟢" if dr_wr >= 60 else "🟡" if dr_wr >= 45 else "🔴"
 
-        # ── LIVE ──────────────────────────────────────────────────────────
-        lv_init = state.get("live_initial_balance", 0)
-        lv_cur = state.get("live_balance", lv_init)
-        lv_trades = self.trade_log.all(mode="live") if self.trade_log else []
-        lv_open = len(self.trade_log.get_active(mode="live")) if self.trade_log else 0
-        lv_pnl = lv_cur - lv_init
-        lv_pnl_str = f"+{lv_pnl:,.2f}" if lv_pnl >= 0 else f"{lv_pnl:,.2f}"
-        lv_pnl_emoji = "📈" if lv_pnl >= 0 else "📉"
-        lv_wr = calc_wr(lv_trades)
-        lv_wr_emoji = "🟢" if lv_wr >= 60 else "🟡" if lv_wr >= 45 else "🔴"
-
         active_dr = " ◀️ ACTIVE" if current_mode == "dry_run" else ""
         active_lv = " ◀️ ACTIVE" if current_mode == "live" else ""
 
@@ -105,7 +130,7 @@ class StatusPage(MenuPage):
             "",
             f"🔴 LIVE{active_lv}",
             f"  Balance : ${lv_cur:,.2f}",
-            f"  PnL     : {lv_pnl_emoji} {lv_pnl_str}",
+            f"  PnL     : {lv_pnl_emoji} {lv_pnl_str} | Unreal: {unreal_str}",
             f"  Open    : {lv_open} | WR: {lv_wr_emoji} {lv_wr:.1f}%",
         ]
 

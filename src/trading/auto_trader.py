@@ -180,16 +180,41 @@ class AutoTrader:
     # ── Risk state sync ─────────────────────────────────────────────────────────
 
     async def _sync_risk_state(self):
-        """Sync RiskGuard state to state_mgr for UI display."""
+        """Sync RiskGuard state + real Binance data to state_mgr for UI display."""
         state = self.state_mgr.get()
         mode = state.get("mode", "dry_run")
         balance_key = "dry_run_balance" if mode == "dry_run" else "live_balance"
+
+        # ── LIVE MODE: Fetch real balance + positions from Binance ────────────
+        if mode == "live" and self.engine and self.engine.exchange:
+            try:
+                bal = await self.engine.get_balance()
+                live_balance = bal.get("free", 0)
+                self.state_mgr.set("live_balance", live_balance)
+                # Also update total/used for reference
+                self.state_mgr.set("live_balance_total", bal.get("total", live_balance))
+                self.state_mgr.set("live_balance_used", bal.get("used", 0))
+            except Exception as e:
+                log.warning("[_sync_risk_state] live balance fetch failed: %s", e)
+
+        # Balance from state (dry-run or stale live)
         balance = state.get(balance_key, 10000)
 
-        # Get open positions count
-        mode = state.get("mode", "dry_run")
-        open_pos = self.trade_log.get_active(mode=mode) if self.trade_log else []
-        open_count = len(open_pos)
+        # ── Open positions count (live mode: from Binance, dry-run: from file) ─
+        if mode == "live" and self.engine and self.engine.exchange:
+            try:
+                live_pos = await self.engine.get_positions()
+                open_count = len(live_pos)
+                self.state_mgr.set("open_positions", live_pos)
+                # Sum unrealized PnL
+                unreal_pnl = sum(p.get("pnl_usd", 0) for p in live_pos)
+                self.state_mgr.set("live_unrealized_pnl", round(unreal_pnl, 2))
+            except Exception as e:
+                log.warning("[_sync_risk_state] live positions fetch failed: %s", e)
+                open_count = 0
+        else:
+            open_pos = self.trade_log.get_active(mode=mode) if self.trade_log else []
+            open_count = len(open_pos)
 
         # Get rolling stats
         stats = self.rolling_buffer.get_stats()
@@ -241,10 +266,16 @@ class AutoTrader:
             avg_loss_pct=-2.0,
         )
 
-        # Daily PnL
-        session_start = state.get("session_start_balance", balance)
-        daily_pnl = balance - session_start
-        daily_pnl_pct = (daily_pnl / session_start * 100) if session_start else 0
+        # Daily PnL — live mode uses real Binance balance
+        if mode == "live":
+            real_bal = state.get("live_balance", balance)
+            session_start = state.get("session_start_balance", real_bal)
+            daily_pnl = real_bal - session_start
+            daily_pnl_pct = (daily_pnl / session_start * 100) if session_start else 0
+        else:
+            session_start = state.get("session_start_balance", balance)
+            daily_pnl = balance - session_start
+            daily_pnl_pct = (daily_pnl / session_start * 100) if session_start else 0
 
         # Risk state snapshot
         risk_state = {

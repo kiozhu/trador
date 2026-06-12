@@ -13,7 +13,13 @@ class PositionsPage(MenuPage):
 
     def build(self, mode: str = "dry_run") -> tuple[str, InlineKeyboardMarkup]:
         """Build positions page for given mode."""
-        positions = self._trade_log.get_active(mode=mode)
+        # LIVE mode: use real Binance positions from state (updated every scan cycle)
+        if mode == "live" and self._state_mgr:
+            state = self._state_mgr.get()
+            live_pos = state.get("open_positions", [])
+            positions = live_pos
+        else:
+            positions = self._trade_log.get_active(mode=mode) if self._trade_log else []
         total = len(positions)
 
         text = (

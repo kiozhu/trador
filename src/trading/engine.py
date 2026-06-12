@@ -175,10 +175,16 @@ class TradingEngine:
     async def get_balance(self) -> dict[str, float]:
         try:
             balance = await asyncio.to_thread(self.exchange.fetch_balance)
+            # Try 'future' section first, fall back to top-level USDT keys
             futures = balance.get("future", {})
-            total = futures.get("total", {}).get("USDT", 0)
-            used = futures.get("used", {}).get("USDT", 0)
-            free = futures.get("free", {}).get("USDT", 0)
+            if futures:
+                total = futures.get("total", {}).get("USDT", 0)
+                used = futures.get("used", {}).get("USDT", 0)
+                free = futures.get("free", {}).get("USDT", 0)
+            else:
+                total = balance.get("total", {}).get("USDT", 0)
+                used = balance.get("used", {}).get("USDT", 0)
+                free = balance.get("free", {}).get("USDT", 0)
             return {"total": total, "used": used, "free": free, "unrealized_pnl": 0}
         except Exception as e:
             log.error("Failed to fetch balance: %s", e)
