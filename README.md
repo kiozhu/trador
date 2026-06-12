@@ -191,12 +191,12 @@ Bot menyediakan menu untuk input credentials langsung dari Telegram (tidak perlu
 ## 📱 Menu Telegram
 
 ### Quick Actions
-| Tombol | Fungsi |
+|| Tombol | Fungsi |
 |--------|--------|
 | 🟢 Start | Aktifkan auto trading |
-| 🔴 Stop | Stop semua trading, close posisi |
+| 🔴 Stop | Stop semua trading, cancel orders |
+| 🔴 Close All (Real) | Emergency close ALL positions + cancel ALL orders (live mode) |
 | ⏸️ Stop+Hold | Stop trading tapi jaga posisi terbuka |
-| 🔄 Re-scan Open | Re-analyze open positions, amend TP/SL |
 
 ### Pages (navigate via `page:name` buttons)
 | Page | Fungsi |
@@ -386,11 +386,13 @@ Output: estimated loss ($), severity emoji, recommendations.
 
 ### Current Track Record
 ```
-Total trades: 0
-Win rate: N/A (belum ada data)
 Mode: LIVE (real money at risk)
-Balance: $6.00 (sangat kecil - hati-hati)
+Balance: ~$12.95 USDT free
+Open positions: 0 (all closed via emergency stop)
+Trading: enabled
 ```
+
+**Status**: Bot stable — emergency stop tested and working ✅
 
 ---
 
