@@ -12,8 +12,25 @@ class WalletPage(MenuPage):
 
     def build(self) -> tuple[str, InlineKeyboardMarkup]:
         state = self._state_mgr.get() if self._state_mgr else {}
+
+        # Get credentials: state.json first, then .env fallback
         api_key = state.get("wallet_api_key", "")
-        connected = state.get("wallet_connected", False)
+        api_secret = state.get("wallet_api_secret", "")
+        if not api_key or not api_secret:
+            env_path = __file__ if hasattr(__file__, 'startswith') else None
+            from pathlib import Path
+            env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+            if env_path.exists():
+                for line in env_path.read_text().splitlines():
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        k, _, v = line.partition("=")
+                        if k == "BINANCE_API_KEY" and not api_key:
+                            api_key = v.strip()
+                        elif k == "BINANCE_API_SECRET" and not api_secret:
+                            api_secret = v.strip()
+
+        connected = state.get("wallet_connected", False) and bool(api_key)
         exchange = state.get("exchange", "binance")
 
         # Show connection status

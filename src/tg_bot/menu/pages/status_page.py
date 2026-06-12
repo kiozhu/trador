@@ -51,13 +51,13 @@ class StatusPage(MenuPage):
         risk_pnl_icon = "📈" if risk_daily_pnl >= 0 else "📉"
 
         # ── DRY RUN ───────────────────────────────────────────────────────
-        dr_trades = self.trade_log.all(mode="dry_run") if self.trade_log else []
         dr_init = state.get("dry_run_initial_balance", 100)
-        dr_bal = sum(t.get("close_balance", dr_init) for t in dr_trades) if dr_trades else dr_init
-        dr_pnl = dr_bal - dr_init
+        dr_cur = state.get("dry_run_balance", dr_init)
+        dr_trades = self.trade_log.all(mode="dry_run") if self.trade_log else []
+        dr_open = len(self.trade_log.get_active(mode="dry_run")) if self.trade_log else 0
+        dr_pnl = dr_cur - dr_init
         dr_pnl_str = f"+{dr_pnl:,.2f}" if dr_pnl >= 0 else f"{dr_pnl:,.2f}"
         dr_pnl_emoji = "📈" if dr_pnl >= 0 else "📉"
-        dr_open = len(self.trade_log.get_active(mode="dry_run")) if self.trade_log else 0
 
         def calc_wr(trades: list) -> float:
             if not trades:
@@ -69,13 +69,13 @@ class StatusPage(MenuPage):
         dr_wr_emoji = "🟢" if dr_wr >= 60 else "🟡" if dr_wr >= 45 else "🔴"
 
         # ── LIVE ──────────────────────────────────────────────────────────
-        lv_trades = self.trade_log.all(mode="live") if self.trade_log else []
         lv_init = state.get("live_initial_balance", 0)
-        lv_bal = sum(t.get("close_balance", lv_init) for t in lv_trades) if lv_trades else lv_init
-        lv_pnl = lv_bal - lv_init
+        lv_cur = state.get("live_balance", lv_init)
+        lv_trades = self.trade_log.all(mode="live") if self.trade_log else []
+        lv_open = len(self.trade_log.get_active(mode="live")) if self.trade_log else 0
+        lv_pnl = lv_cur - lv_init
         lv_pnl_str = f"+{lv_pnl:,.2f}" if lv_pnl >= 0 else f"{lv_pnl:,.2f}"
         lv_pnl_emoji = "📈" if lv_pnl >= 0 else "📉"
-        lv_open = len(self.trade_log.get_active(mode="live")) if self.trade_log else 0
         lv_wr = calc_wr(lv_trades)
         lv_wr_emoji = "🟢" if lv_wr >= 60 else "🟡" if lv_wr >= 45 else "🔴"
 
@@ -99,12 +99,12 @@ class StatusPage(MenuPage):
             f"📈 PnL    : {risk_pnl_icon} {risk_pnl_str} | Open: {risk_open_pos} pos",
             "",
             f"🟡 DRY RUN{active_dr}",
-            f"  Balance : ${dr_bal:,.2f}",
+            f"  Balance : ${dr_cur:,.2f}",
             f"  PnL     : {dr_pnl_emoji} {dr_pnl_str}",
             f"  Open    : {dr_open} | WR: {dr_wr_emoji} {dr_wr:.1f}%",
             "",
             f"🔴 LIVE{active_lv}",
-            f"  Balance : ${lv_bal:,.2f}",
+            f"  Balance : ${lv_cur:,.2f}",
             f"  PnL     : {lv_pnl_emoji} {lv_pnl_str}",
             f"  Open    : {lv_open} | WR: {lv_wr_emoji} {lv_wr:.1f}%",
         ]

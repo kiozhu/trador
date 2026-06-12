@@ -1280,11 +1280,37 @@ class MenuRouter:
 
         if key == "test":
             exchange_type = state.get("exchange", "binance")
+
+            # ── Get credentials: state.json first, then .env fallback ─────────
             api_key = state.get("wallet_api_key", "")
             api_secret = state.get("wallet_api_secret", "")
+            if not api_key or not api_secret:
+                # Fallback: try reading from .env directly
+                env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+                if env_path.exists():
+                    for line in env_path.read_text().splitlines():
+                        line = line.strip()
+                        if "=" in line and not line.startswith("#"):
+                            k, _, v = line.partition("=")
+                            if k == "BINANCE_API_KEY" and not api_key:
+                                api_key = v.strip()
+                            elif k == "BINANCE_API_SECRET" and not api_secret:
+                                api_secret = v.strip()
 
             if not api_key or not api_secret:
                 await query.answer("❌ API Key/Secret belum diinput", show_alert=True)
+                await query.edit_message_text(
+                    "❌ Credential belum ada.\n\n"
+                    "Langkah:\n"
+                    "1. 🔐 Input API Key\n"
+                    "2. 🔏 Input API Secret\n"
+                    "3. 🧪 Test Connection\n\n"
+                    "Tekan ◀️ Back untuk kembali.",
+                    parse_mode=None,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("◀️ Back", callback_data="page:wallet")]
+                    ]),
+                )
                 return
 
             await query.answer("🧪 Testing connection...", show_alert=False)
@@ -1315,6 +1341,10 @@ class MenuRouter:
                         f"Futures: ✅ Enabled"
                     )
                     self.state_mgr.set("wallet_connected", True)
+                    self.state_mgr.set("wallet_api_key", api_key)
+                    self.state_mgr.set("wallet_api_secret", api_secret)
+                    self.state_mgr.set("live_balance", total_usdt)
+                    self.state_mgr.set("live_initial_balance", total_usdt)
                 else:
                     text = "⚡ Hyperliquid Connected!\n\nWallet: ✅ Connected"
 
