@@ -150,6 +150,14 @@ class AutoTrader:
         self._task = asyncio.create_task(self._loop())
         log.info("AutoTrader started (interval=%ds, pool=%d symbols)", self.scan_interval, len(self.symbol_pool))
 
+    def reload_positions(self):
+        """Force trade_log to reload positions from file (call after startup sync)."""
+        if self.trade_log:
+            mode = self.state_mgr.get().get("mode", "dry_run")
+            active = self.trade_log.get_active(mode=mode)
+            log.info("[reload_positions] %s open positions reloaded from file", len(active))
+            return active
+
     async def stop(self):
         """Stop scanners + loop."""
         self.running = False
@@ -291,6 +299,11 @@ class AutoTrader:
         elif risk_action == "resume":
             self.risk_guard.resume()
             self.state_mgr.set("_risk_action", "")
+        elif risk_action == "resume_clear":
+            # Resume + reset consecutive losses (for testing)
+            self.risk_guard.resume()
+            self.risk_guard._consecutive_losses = 0
+            self.state_mgr.set("_risk_action", "")
 
         # ── Sync sideways mode from state to risk_guard ──────────────────
         self.risk_guard.sync_sideways_mode(state)
@@ -307,6 +320,17 @@ class AutoTrader:
 
         mode = state.get("mode", "dry_run")
         direction = state.get("direction", "both")
+
+        # ── Minimum balance check — skip cycle if too low to trade ────────────
+        MIN_BALANCE = 6.0
+        balance_key = "dry_run_balance" if mode == "dry_run" else "live_balance"
+        balance = state.get(balance_key, 0)
+        if balance < MIN_BALANCE:
+            log.warning(
+                "Balance $%.2f < minimum $%.2f — skipping trade cycle",
+                balance, MIN_BALANCE,
+            )
+            return
 
         # ── Get all active strategies ─────────────────────────────────────────
         active_strategies = self.loader.list_active() if self.loader else []
@@ -436,9 +460,13 @@ class AutoTrader:
             tf = strategy.get("timeframe", "1h")
             candles = await self.engine.fetch_ohlcv("BTC/USDT", tf, limit=50)
             if not candles or len(candles) < 30:
+                log.warning("[regime] Not enough candles for %s — forcing sideway", tf)
                 return "sideway"
 
             closes = [c[4] for c in candles[-30:]]
+            highs = [c[2] for c in candles[-30:]]
+            lows  = [c[3] for c in candles[-30:]]
+
             ema20 = self._ema(closes, 20)
             ema50 = self._ema(closes, 50)
 
@@ -447,26 +475,61 @@ class AutoTrader:
 
             # ── Volatility check — skip if too narrow (chop) ──────────────
             # ATR-style: (max-high - min-low) / mid price as %
-            highs = [c[2] for c in candles[-30:]]
-            lows  = [c[3] for c in candles[-30:]]
             max_high = max(highs)
             min_low  = min(lows)
             atr_pct  = (max_high - min_low) / max_high * 100
 
             if atr_pct < 0.3:
-                return "sideway"  # too choppy
-
-            # ── EMA slope direction ─────────────────────────────────────────
-            # Use very small threshold — even slight trend qualifies
-            if ema20_slope > 0.001 and ema50_slope > 0.0005:
-                return "bullish"
-            elif ema20_slope < -0.001 and ema50_slope < -0.0005:
-                return "bearish"
-            else:
+                log.info("[regime] %s ATR%%=%.4f%% < 0.3%% → sideway", tf, atr_pct)
                 return "sideway"
 
+            # ── EMA slope direction ─────────────────────────────────────────
+            # Allow mixed signals: if EMA20 clearly positive, don't block on EMA50
+            # Use separate thresholds for fast vs slow EMA
+            bullish_score = 0
+            if ema20_slope > 0.005:
+                bullish_score += 3  # strong fast EMA = 3
+            elif ema20_slope > 0.003:
+                bullish_score += 2
+            elif ema20_slope > 0.001:
+                bullish_score += 1
+
+            if ema50_slope > 0.001:
+                bullish_score += 2
+            elif ema50_slope > 0.0005:
+                bullish_score += 1
+
+            bearish_score = 0
+            if ema20_slope < -0.005:
+                bearish_score += 3  # strong fast EMA = 3
+            elif ema20_slope < -0.003:
+                bearish_score += 2
+            elif ema20_slope < -0.001:
+                bearish_score += 1
+
+            if ema50_slope < -0.001:
+                bearish_score += 2
+            elif ema50_slope < -0.0005:
+                bearish_score += 1
+
+            # ATR ok + clear directional score → take that direction
+            # If scores are too close / weak → sideway
+            if bullish_score >= 4:
+                regime = "bullish"
+            elif ema20_slope > 0.005 and bullish_score >= 3:
+                # Strong fast EMA signal — trust it even if slow EMA not yet aligned
+                regime = "bullish"
+            elif bearish_score >= 4:
+                regime = "bearish"
+            else:
+                regime = "sideway"
+
+            log.info("[regime] tf=%s ATR%%=%.4f%% EMA20=%.6f EMA50=%.6f bull=%d bear=%d → %s",
+                     tf, atr_pct, ema20_slope, ema50_slope, bullish_score, bearish_score, regime)
+            return regime
+
         except Exception as e:
-            log.debug("Regime detection error: %s", e)
+            log.error("[regime] Detection failed: %s — forcing sideway", e)
             return "sideway"
 
     # ── Scanner data collection ─────────────────────────────────────────────────
@@ -1136,28 +1199,138 @@ class AutoTrader:
                 result.get("pnl_pct", 0), result.get("pnl", 0), new_balance,
             )
         else:
+            # ── Fetch fresh current price for limit order ──────────────────
             try:
-                result = await self.engine.place_order(
-                    symbol=symbol,
-                    side=side.lower(),
-                    order_type="limit",
-                    amount=size_pct,
-                    price=entry,
-                    sl_pct=sl_pct,
-                    tp_pct=tp_pct,
-                    leverage=leverage,
+                ticker = await asyncio.to_thread(
+                    self.engine.exchange.fetch_ticker, symbol
                 )
+                current_price = ticker.get("last", entry)
+            except Exception:
+                current_price = entry
+
+            # Fetch exchange minimums for this symbol
+            market = self.engine.exchange.markets.get(symbol, {})
+            min_amount = market.get("limits", {}).get("amount", {}).get("min", 0.001)
+            min_cost = market.get("limits", {}).get("cost", {}).get("min", 20.0)
+
+            # Enforce minimum notional using exchange's min_cost (default $20)
+            notional = balance * size_pct / 100
+            MIN_SIZE_PCT = (min_cost / balance * 100) if balance > 0 else 100.0
+            if size_pct < MIN_SIZE_PCT:
+                size_pct = min(MIN_SIZE_PCT, 100.0)
+                notional = balance * size_pct / 100
+
+            # Convert size_pct to absolute quantity using FRESH current price
+            # (place_order would use stale entry price, causing Binance price mismatch)
+            qty = (balance * size_pct / 100) / current_price if current_price > 0 else 0
+
+            # Floor qty to exchange minimum amount (prevent "amount too small" reject)
+            # Use normalized symbol key to find correct USD-M futures market
+            market_key = symbol.upper()  # CCXT keys are uppercase: BTC/USDT
+            market = self.engine.exchange.markets.get(market_key, {})
+            min_amount = market.get("limits", {}).get("amount", {}).get("min") or 0.001
+            min_cost = market.get("limits", {}).get("cost", {}).get("min") or 5.0
+
+            # Conservative floor: use MAX of CCXT data and hardcoded Binance minimums
+            # BTC: min_amount=0.001, min_notional=$5
+            # ETH: min_amount=0.001, min_notional=$5
+            # SOL: min_amount=0.01, min_notional=$10
+            # XAU/XAG: min_amount=0.001, min_notional=$10
+            symbol_floors = {
+                "BTC/USDT": (0.001, 5.0),
+                "ETH/USDT": (0.001, 5.0),
+                "SOL/USDT": (0.01, 10.0),
+                "XAU/USDT": (0.001, 10.0),
+                "XAG/USDT": (0.001, 10.0),
+            }
+            floor_amount, floor_cost = symbol_floors.get(symbol, (0.001, 5.0))
+            min_amount = max(min_amount, floor_amount)
+            min_cost = max(min_cost, floor_cost)
+
+            # Compute raw notional from size_pct
+            raw_notional = balance * size_pct / 100
+
+            # Enforce minimum notional floor BEFORE computing qty
+            # BTC: min_notional=$50, ETH/SOL: min_notional=$20
+            symbol_floors = {
+                "BTC/USDT": (0.001, 50.0),
+                "ETH/USDT": (0.001, 20.0),
+                "SOL/USDT": (0.01, 10.0),
+                "XAU/USDT": (0.001, 10.0),
+                "XAG/USDT": (0.001, 10.0),
+            }
+            floor_amount, floor_notional = symbol_floors.get(symbol, (0.001, 5.0))
+
+            # If raw notional is below floor, increase to floor (respecting balance)
+            effective_notional = max(raw_notional, floor_notional)
+            # Cap at available balance (with leverage buffer)
+            leverage = signal.get("leverage", 3)
+            max_usable = balance * leverage * 0.90  # 90% to keep 10% margin buffer
+            effective_notional = min(effective_notional, max_usable)
+            # Add 0.5% buffer to stay safely above Binance's strict notional check
+            effective_notional *= 1.005
+
+            # Convert to qty using fresh current price
+            qty = effective_notional / current_price if current_price > 0 else 0
+
+            # Floor qty to exchange minimum amount
+            if qty < floor_amount:
+                qty = floor_amount
+                effective_notional = qty * current_price
+                log.info("[ORDER] %s: qty floored to min_amount %.6f | notional=$%.2f",
+                         symbol, qty, effective_notional)
+
+            log.info("[ORDER] %s: raw_notional=$%.2f -> effective=$%.2f | qty=%.6f @ $%.2f | leverage=%d",
+                     symbol, raw_notional, effective_notional, qty, current_price, leverage)
+
+            # Use fresh current price as limit price (avoids Binance price floor violation)
+            limit_price = current_price
+
+            log.info(
+                "Size floored: %.1f%% → qty=%.6f @ $%.2f → notional=$%.2f | limit=$%.2f",
+                size_pct, qty, current_price, effective_notional, limit_price,
+            )
+
+            try:
+                # Call create_order DIRECTLY with absolute qty — bypass place_order's
+                # percentage-to-qty conversion which uses stale entry price and causes
+                # Binance price-floor violations (SHORT) and notional mismatch (all).
+                # Binance expects buy/sell, not long/short
+                binance_side = "buy" if side.lower() == "long" else "sell"
+                log.info("[ORDER DEBUG] create_order: symbol=%s type=limit side=%s qty=%.6f price=%.2f",
+                         symbol, binance_side, qty, limit_price)
+                result = await asyncio.to_thread(
+                    self.engine.exchange.create_order,
+                    symbol,
+                    "limit",
+                    binance_side,
+                    qty,          # absolute qty computed from fresh price
+                    limit_price,  # fresh current price
+                    params={"reduceOnly": False},
+                )
+
+                # Only log/record if order actually succeeded (result has id)
+                if not result or not result.get("id"):
+                    log.error("Order failed: %s %s returned empty — NOT adding to trade log", symbol, side)
+                    return
+
+                # ── Order succeeded — log trade + set cooldown ─────────────
                 trade["order_id"] = result.get("id")
                 trade["status"] = "open"
                 self.trade_log.add(trade)
                 self._cooldowns[symbol] = datetime.now(timezone.utc).timestamp()
                 if self.hermes_reporter:
                     self.hermes_reporter.write_trade(trade)
-                trades_key = "live_trades"
+
+                # Increment trade count
+                trades_key = "live_trades" if mode == "live" else "dry_run_trades"
                 cur_trades = state.get(trades_key, 0)
                 self.state_mgr.set(trades_key, cur_trades + 1)
-                log.info("🟢 LIVE ORDER placed: %s %s @ %.4f (score=%d, size=%.1f%%, lev=%d)",
-                    side, symbol, entry, signal["score"], size_pct, leverage)
+
+                log.info(
+                    "🟢 LIVE ORDER placed: %s %s @ %.4f (score=%d, qty=%.6f, lev=%d)",
+                    side, symbol, limit_price, signal["score"], qty, leverage,
+                )
             except Exception as e:
                 log.error("Live order failed: %s", e)
 

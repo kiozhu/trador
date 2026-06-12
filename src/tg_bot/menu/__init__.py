@@ -49,6 +49,57 @@ class MenuRouter:
         }
         self.nav = MenuNavigator(pages)
 
+    def _sync_positions_from_binance(self, live_positions_data: list, mode: str = "live") -> None:
+        """Sync trade_log with real positions from Binance.
+
+        live_positions_data: list of dicts from CCXT fetch_positions() — each has
+        symbol, contracts, side, entryPrice, unrealizedPnl, etc.
+        """
+        if not self.trade_log:
+            return
+
+        # Read current open positions from trade_log
+        current = self.trade_log.get_active(mode=mode)
+        current_symbols = {p.get("symbol") for p in current}
+
+        # Get real open symbols from Binance
+        real_symbols = set()
+        for p in live_positions_data:
+            sym = p.get("symbol", "")
+            if sym and float(p.get("contracts", 0)) != 0:
+                real_symbols.add(sym)
+
+        # Close stale positions (in trade_log but not on Binance)
+        for pos in current:
+            sym = pos.get("symbol", "")
+            if sym not in real_symbols:
+                pos["status"] = "closed"
+                pos["exit_reason"] = "exchange_sync"
+                pos["close_timestamp"] = datetime.now(timezone.utc).isoformat()
+                # Directly update in file to avoid add() creating duplicates
+                mode_path = Path(f"memory/{mode}/trade_history.json")
+                from utils.helpers import atomic_write_json, read_json
+                data = read_json(mode_path) or {"trades": []}
+                for i, t in enumerate(data["trades"]):
+                    if t.get("symbol") == sym and t.get("status") == "open":
+                        t["status"] = "closed"
+                        t["exit_reason"] = "exchange_sync"
+                        t["close_timestamp"] = datetime.now(timezone.utc).isoformat()
+                        log.info("[Positions] Closed stale %s (not on Binance)", sym)
+                        break
+                atomic_write_json(mode_path, data)
+
+        # Update existing positions with real PnL
+        for pos in current:
+            sym = pos.get("symbol", "")
+            for live_p in live_positions_data:
+                if live_p.get("symbol") == sym and float(live_p.get("contracts", 0)) != 0:
+                    pos["current_price"] = live_p.get("markPrice", 0)
+                    pos["pnl"] = float(live_p.get("unrealizedPnl", 0))
+                    pos["pnl_pct"] = float(live_p.get("percentage", 0))
+                    self.trade_log.add(pos)
+                    break
+
     async def _navigate_to(self, update: Update, page_key: str) -> None:
         """Navigate to a page: push to nav stack, build, edit message."""
         self.nav.push(page_key)
@@ -134,37 +185,106 @@ class MenuRouter:
             self.state_mgr.set("trading_enabled", False)
             self.state_mgr.set_status("stopped")
 
-            # Cancel ALL open orders on exchange
-            if self.engine:
+            state = self.state_mgr.get()
+            api_key = state.get("wallet_api_key", "")
+            api_secret = state.get("wallet_api_secret", "")
+
+            import ccxt  # noqa: E402
+            from pathlib import Path
+            env_secrets = {}
+            env_path = Path("/home/ubuntu/trador/.env")
+            if env_path.exists():
+                for line in env_path.read_text().splitlines():
+                    if '=' in line:
+                        k, v = line.split('=', 1)
+                        env_secrets[k] = v.strip()
+
+            # Build exchange with Ed25519 support
+            ex_config = {
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": False,
+                "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+            }
+            secret = env_secrets.get("BINANCE_API_SECRET", "")
+            if "PRIVATE KEY" in secret:
+                ex_config["secret"] = secret  # CCXT auto-detects Ed25519 from format
+
+            ex = ccxt.binance(ex_config)
+
+            def _sync_emergency_stop():
+                """Sync helper — runs CCXT calls in thread, returns (cancelled, closed)."""
+                cancelled = 0
+                closed = 0
+
+                # ── Step 1: Cancel ALL open orders ───────────────────────────
+                symbols_to_check = [
+                    "BTC/USDT", "ETH/USDT", "SOL/USDT", "XAU/USDT", "XAG/USDT",
+                    "ZEC/USDT", "DOGE/USDT", "ADA/USDT", "VELVET/USDT",
+                    "SNDK/USDT", "HYPE/USDT", "XLM/USDT",
+                ]
+                for sym in symbols_to_check:
+                    try:
+                        orders = ex.fetch_open_orders(sym)
+                        for o in orders:
+                            try:
+                                ex.cancel_order(o["id"], sym)
+                                cancelled += 1
+                                log.info("[stop_close_all] Cancelled %s %s order %s",
+                                         sym, o["type"], o["id"])
+                            except Exception as e2:
+                                log.error("Cancel order %s failed: %s", o["id"], e2)
+                    except Exception as e1:
+                        log.error("[stop_close_all] Fetch orders for %s failed: %s", sym, e1)
+                log.info("[stop_close_all] Cancelled %d orders total", cancelled)
+
+                # ── Step 2: Close ALL open positions ────────────────────────
                 try:
-                    result = await self.engine.cancel_all_orders()
-                    log.info("Cancelled all orders: %s", result)
-                except Exception as e:
-                    log.error("Cancel all orders failed: %s", e)
-
-            # Close ALL open positions on exchange
-            if self.engine:
-                mode = state.get("mode", "live")
-                positions = self.trade_log.get_active(mode=mode) if self.trade_log else []
-                for t in positions:
-                    sym = t.get("symbol", "")
-                    side = t.get("side", "")
-                    if sym and side:
+                    positions = ex.fetch_positions()
+                    for pos in positions:
+                        raw_size = pos.get("contracts", 0)
+                        size = float(raw_size) if raw_size is not None else 0
+                        if size == 0:
+                            continue
+                        sym = pos.get("symbol", "")
+                        if not sym:
+                            continue
+                        # Close side is opposite of position side
+                        side = pos.get("side", "")
+                        close_side = "buy" if side == "short" else "sell"
+                        amount = abs(size)
                         try:
-                            close_result = await self.engine.close_position(sym, side)
-                            log.info("Closed position %s %s: %s", sym, side, close_result)
-                        except Exception as e:
-                            log.error("Close position %s %s failed: %s", sym, side, e)
+                            ex.create_order(sym, "market", close_side, amount,
+                                            params={"reduceOnly": True})
+                            closed += 1
+                            log.info("[stop_close_all] Closed %s (%s %s)",
+                                     sym, close_side, amount)
+                        except Exception as e2:
+                            log.error("[stop_close_all] Close %s failed: %s", sym, e2)
+                    log.info("[stop_close_all] Closed %d positions total", closed)
+                except Exception as e:
+                    log.error("[stop_close_all] Close positions failed: %s", e)
 
-            # Update local trade log
-            if self.trade_log:
-                for t in self.trade_log.get_active(mode="live"):
+                return cancelled, closed
+
+            # Run in thread pool (CCXT is sync, use to_thread to avoid blocking)
+            cancelled, closed = await asyncio.to_thread(_sync_emergency_stop)
+
+            # ── Step 3: Update trade_history.json ──────────────────────────
+            from utils.helpers import read_json, atomic_write_json
+            file_path = Path("memory/live/trade_history.json")
+            data = read_json(file_path) or {"trades": []}
+            for t in data["trades"]:
+                if t.get("status") == "open":
                     t["status"] = "closed"
                     t["exit_reason"] = "manual_stop"
                     t["close_timestamp"] = datetime.now(timezone.utc).isoformat()
-                    self.trade_log.add(t)
+            atomic_write_json(file_path, {"trades": data["trades"]})
+            log.info("[stop_close_all] Marked all open trades as closed in file")
 
-            await query.answer("🔴 All positions closed + orders cancelled", show_alert=True)
+            await query.answer(
+                f"🔴 Stopped — {cancelled} orders cancelled, {closed} positions closed",
+                show_alert=True)
             await self._navigate_to(update, "main")
             return
 
@@ -821,8 +941,11 @@ class MenuRouter:
                 import httpx
                 model_name = state.get("llm_model") or "MiniMax-M3"
                 headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-                # MiniMax uses /v1/chat/completions at the end of base_url
-                url = f"{base_url.rstrip('/')}/v1/chat/completions"
+                # Fix double-/v1/ path: strip /v1 suffix from base_url before appending
+                clean_base = base_url.rstrip("/")
+                if clean_base.endswith("/v1"):
+                    clean_base = clean_base[:-3]  # remove trailing /v1
+                url = f"{clean_base}/v1/chat/completions"
                 payload = {"model": model_name, "max_tokens": 10,
                            "messages": [{"role": "user", "content": "ping"}]}
                 resp = httpx.post(url, json=payload, headers=headers, timeout=15)
@@ -1515,6 +1638,29 @@ class MenuRouter:
                 data.startswith("pos_close_all:")):
             return
 
+        # ── Sync live positions from Binance before reading ──────────────────
+        state = self.state_mgr.get()
+        mode = state.get("mode", "dry_run")
+        if mode == "live":
+            api_key = state.get("wallet_api_key", "")
+            api_secret = state.get("wallet_api_secret", "")
+            if api_key and api_secret:
+                try:
+                    # Call CCXT directly to get full position data
+                    import ccxt
+                    ex = ccxt.binance({
+                        "apiKey": api_key,
+                        "secret": api_secret,
+                        "enableRateLimit": False,
+                        "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+                    })
+                    raw_positions = await asyncio.to_thread(ex.fetch_positions)
+                    live_positions = [p for p in raw_positions if float(p.get("contracts", 0)) != 0]
+                    self._sync_positions_from_binance(live_positions, mode="live")
+                    log.info("[Positions] Synced %d live positions from Binance", len(live_positions))
+                except Exception as e:
+                    log.error("[Positions] Binance sync failed: %s", e)
+
         # ── Close single position ───────────────────────────────────────
         if data.startswith("pos_close:"):
             parts = data.split(":")
@@ -1522,17 +1668,65 @@ class MenuRouter:
                 mode = parts[1]
                 idx = int(parts[2])
                 positions = self.trade_log.get_active(mode=mode)
+
+                # Get symbol from trade_log
                 if 0 <= idx < len(positions):
                     p = positions[idx]
-                    p["status"] = "closed"
-                    p["exit_reason"] = "manual_close"
-                    p["close_timestamp"] = datetime.now(timezone.utc).isoformat()
-                    p["pnl"] = 0
-                    p["pnl_pct"] = 0
-                    self.trade_log.add(p)
-                    await query.answer(f"🔴 Closed {p.get('symbol')}", show_alert=True)
+                    sym = p.get("symbol", "")
+                    side = p.get("side", "")
+
+                    # ── Close on exchange (live mode) ─────────────────────
+                    if mode == "live" and sym:
+                        state = self.state_mgr.get()
+                        api_key = state.get("wallet_api_key", "")
+                        api_secret = state.get("wallet_api_secret", "")
+                        if api_key and api_secret:
+                            try:
+                                import ccxt
+                                ex = ccxt.binance({
+                                    "apiKey": api_key,
+                                    "secret": api_secret,
+                                    "enableRateLimit": False,
+                                    "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+                                })
+                                # Get actual position from Binance (run sync call in thread pool)
+                                all_positions = await asyncio.to_thread(ex.fetch_positions)
+                                live_pos = [p2 for p2 in all_positions
+                                           if p2.get("symbol") == sym and float(p2.get("contracts", 0)) != 0]
+                                if live_pos:
+                                    contracts = float(live_pos[0].get("contracts", 0))
+                                    close_side = "buy" if contracts < 0 else "sell"
+                                    amount = abs(contracts)
+                                    await asyncio.to_thread(
+                                        ex.create_order, sym, "market", close_side, amount,
+                                        params={"reduceOnly": True}
+                                    )
+                                    log.info("[pos_close] Closed %s on Binance", sym)
+                                else:
+                                    log.info("[pos_close] No open position on Binance for %s", sym)
+                            except Exception as e:
+                                log.error("[pos_close] Close %s failed: %s", sym, e)
+
+                    # ── Update trade_history.json directly ───────────────
+                    from pathlib import Path
+                    from utils.helpers import read_json, atomic_write_json
+                    file_path = Path(f"memory/{mode}/trade_history.json")
+                    data = read_json(file_path) or {"trades": []}
+                    for t in data["trades"]:
+                        if t.get("symbol") == sym and t.get("status") == "open":
+                            t["status"] = "closed"
+                            t["exit_reason"] = "manual_close"
+                            t["close_timestamp"] = datetime.now(timezone.utc).isoformat()
+                            t["pnl"] = 0
+                            t["pnl_pct"] = 0
+                            break
+                    atomic_write_json(file_path, {"trades": data["trades"]})
+                    log.info("[pos_close] Marked %s as closed in file", sym)
+
+                    await query.answer(f"🔴 Closed {sym}", show_alert=True)
                 else:
                     await query.answer("Position not found", show_alert=True)
+
                 from .pages import PositionsPage
                 page = PositionsPage(self.trade_log, self.state_mgr)
                 text, reply_markup = page.build(mode=mode)
@@ -1580,13 +1774,60 @@ class MenuRouter:
                 positions = self.trade_log.get_active(mode=mode)
                 if 0 <= idx < len(positions):
                     p = positions[idx]
+                    sym = p.get("symbol", "")
                     pnl = p.get("pnl", 0)
                     closed_pnl = pnl * (pct / 100)
                     remaining_pnl = pnl * ((100 - pct) / 100)
-                    p["pnl"] = round(remaining_pnl, 4)
-                    p["status"] = "open"
-                    p["exit_reason"] = f"partial_close_{pct}%"
-                    self.trade_log.add(p)
+
+                    # ── Execute partial close on Binance (live mode) ───────
+                    if mode == "live" and sym:
+                        state = self.state_mgr.get()
+                        api_key = state.get("wallet_api_key", "")
+                        api_secret = state.get("wallet_api_secret", "")
+                        if api_key and api_secret:
+                            try:
+                                import ccxt
+                                ex = ccxt.binance({
+                                    "apiKey": api_key,
+                                    "secret": api_secret,
+                                    "enableRateLimit": False,
+                                    "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+                                })
+                                all_positions = await asyncio.to_thread(ex.fetch_positions)
+                                live_pos = [p2 for p2 in all_positions
+                                           if p2.get("symbol") == sym and float(p2.get("contracts", 0)) != 0]
+                                if live_pos:
+                                    contracts = float(live_pos[0].get("contracts", 0))
+                                    partial_amount = abs(contracts) * (pct / 100)
+                                    close_side = "buy" if contracts < 0 else "sell"
+                                    if partial_amount > 0:
+                                        await asyncio.to_thread(
+                                            ex.create_order, sym, "market", close_side, partial_amount,
+                                            params={"reduceOnly": True}
+                                        )
+                                        log.info("[pos_partial_exec] Closed %d%% of %s", pct, sym)
+                            except Exception as e:
+                                log.error("[pos_partial_exec] Partial close %s failed: %s", sym, e)
+
+                    # ── Update trade_history.json directly ───────────────
+                    from pathlib import Path
+                    from utils.helpers import read_json, atomic_write_json
+                    file_path = Path(f"memory/{mode}/trade_history.json")
+                    data = read_json(file_path) or {"trades": []}
+                    for t in data["trades"]:
+                        if t.get("symbol") == sym and t.get("status") == "open":
+                            t["pnl"] = round(remaining_pnl, 4)
+                            # If pct=100, close the position; otherwise mark partial
+                            if pct == 100:
+                                t["status"] = "closed"
+                                t["exit_reason"] = "manual_close"
+                            else:
+                                t["exit_reason"] = f"partial_close_{pct}%"
+                            t["close_timestamp"] = datetime.now(timezone.utc).isoformat()
+                            break
+                    atomic_write_json(file_path, {"trades": data["trades"]})
+                    log.info("[pos_partial_exec] Updated file for %s partial close %d%%", sym, pct)
+
                     await query.answer(f"📊 Partial close {pct}% — PnL: ${closed_pnl:.2f}", show_alert=True)
                     from .pages import PositionsPage
                     page = PositionsPage(self.trade_log, self.state_mgr)
@@ -1601,17 +1842,102 @@ class MenuRouter:
         # ── Close all positions ──────────────────────────────────────────
         if data.startswith("pos_close_all:"):
             mode = data.split(":")[1]
-            positions = self.trade_log.get_active(mode=mode)
+            state = self.state_mgr.get()
+            api_key = state.get("wallet_api_key", "")
+            api_secret = state.get("wallet_api_secret", "")
+
+            # Load Ed25519 secret from .env if present
+            from pathlib import Path
+            env_secrets = {}
+            env_path = Path("/home/ubuntu/trador/.env")
+            if env_path.exists():
+                for line in env_path.read_text().splitlines():
+                    if '=' in line:
+                        k, v = line.split('=', 1)
+                        env_secrets[k] = v.strip()
+
+            ex_config = {
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": False,
+                "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+            }
+            secret = env_secrets.get("BINANCE_API_SECRET", "")
+            if "PRIVATE KEY" in secret:
+                ex_config["secret"] = secret
+
+            ex = ccxt.binance(ex_config)
+
+            async def _do_pos_close_all():
+                cancelled = 0
+                closed = 0
+                # Step 1: Cancel all open orders
+                try:
+                    symbols_to_check = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XAU/USDT",
+                                        "XAG/USDT", "ZEC/USDT", "DOGE/USDT", "ADA/USDT",
+                                        "VELVET/USDT", "SNDK/USDT", "HYPE/USDT", "XLM/USDT"]
+                    for sym in symbols_to_check:
+                        try:
+                            orders = await asyncio.to_thread(ex.fetch_open_orders, sym)
+                            for o in orders:
+                                try:
+                                    await asyncio.to_thread(ex.cancel_order, o["id"], sym)
+                                    cancelled += 1
+                                except Exception as e2:
+                                    log.error("Cancel order %s failed: %s", o["id"], e2)
+                        except Exception as e1:
+                            log.error("[pos_close_all] Fetch orders for %s failed: %s", sym, e1)
+                    log.info("[pos_close_all] Cancelled %d orders total", cancelled)
+                except Exception as e:
+                    log.error("[pos_close_all] Cancel orders failed: %s", e)
+
+                # Step 2: Close all open positions
+                try:
+                    positions = await asyncio.to_thread(ex.fetch_positions)
+                    live_positions = [p for p in positions if float(p.get("contracts", 0)) != 0]
+                    for pos in live_positions:
+                        sym = pos.get("symbol", "")
+                        if not sym:
+                            continue
+                        try:
+                            contracts = float(pos.get("contracts", 0))
+                            close_side = "buy" if contracts < 0 else "sell"
+                            amount = abs(contracts)
+                            await asyncio.to_thread(
+                                ex.create_order, sym, "market", close_side, amount,
+                                params={"reduceOnly": True}
+                            )
+                            closed += 1
+                            log.info("[pos_close_all] Closed %s (%s %s)", sym, close_side, amount)
+                        except Exception as e2:
+                            log.error("[pos_close_all] Close %s failed: %s", sym, e2)
+                    log.info("[pos_close_all] Closed %d positions total", closed)
+                except Exception as e:
+                    log.error("[pos_close_all] Close positions failed: %s", e)
+
+                return cancelled, closed
+
+            cancelled, closed = await asyncio.to_thread(
+                __import__("asyncio").run, _do_pos_close_all()
+            )
+
+            # Step 3: Update trade_history.json
+            from utils.helpers import read_json, atomic_write_json
+            file_path = Path(f"memory/{mode}/trade_history.json")
+            file_data = read_json(file_path) or {"trades": []}
             count = 0
-            for p in positions:
-                p["status"] = "closed"
-                p["exit_reason"] = "manual_close_all"
-                p["close_timestamp"] = datetime.now(timezone.utc).isoformat()
-                p["pnl"] = 0
-                p["pnl_pct"] = 0
-                self.trade_log.add(p)
-                count += 1
-            await query.answer(f"🔴 Closed {count} positions", show_alert=True)
+            for t in file_data["trades"]:
+                if t.get("status") == "open":
+                    t["status"] = "closed"
+                    t["exit_reason"] = "manual_close_all"
+                    t["close_timestamp"] = datetime.now(timezone.utc).isoformat()
+                    t["pnl"] = 0
+                    t["pnl_pct"] = 0
+                    count += 1
+            atomic_write_json(file_path, {"trades": file_data["trades"]})
+            log.info("[pos_close_all] Marked %d trades as closed in file", count)
+
+            await query.answer(f"🔴 Closed {closed} positions, cancelled {cancelled} orders", show_alert=True)
             from .pages import PositionsPage
             page = PositionsPage(self.trade_log, self.state_mgr)
             text, reply_markup = page.build(mode=mode)
@@ -1646,17 +1972,30 @@ class MenuRouter:
         if page_key == "back":
             page_key = self.nav.pop() or "main"
 
-        # ── Monitor: fetch live balance before building ────────────────────
+        # ── Monitor: fetch live balance + sync positions before building ──
         if page_key == "monitor":
             state = self.state_mgr.get()
             if state.get("mode") == "live":
                 api_key = state.get("wallet_api_key", "")
                 api_secret = state.get("wallet_api_secret", "")
                 if api_key and api_secret:
-                    from .pages.balance_page import _fetch_binance_live_balance
-                    result = _fetch_binance_live_balance(api_key, api_secret)
-                    if result["success"]:
-                        self.state_mgr.set("live_balance", result["total"])
+                    try:
+                        import ccxt
+                        ex = ccxt.binance({
+                            "apiKey": api_key,
+                            "secret": api_secret,
+                            "enableRateLimit": True,
+                            "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+                        })
+                        # Fetch balance
+                        bal = ex.fetch_balance({"type": "future"})
+                        self.state_mgr.set("live_balance", bal.get("USDT", {}).get("total", 0))
+                        # Sync positions
+                        live_positions = [p for p in ex.fetch_positions() if float(p.get("contracts", 0)) != 0]
+                        self._sync_positions_from_binance(live_positions, mode="live")
+                        log.info("[Monitor] Synced %d positions from Binance", len(live_positions))
+                    except Exception as e:
+                        log.error("[Monitor] Binance sync failed: %s", e)
 
         # History and Positions need mode context — build directly
         if page_key == "history":
@@ -1690,7 +2029,11 @@ class MenuRouter:
             await query.answer("📡 Loading...", show_alert=False)
             await query.edit_message_text(text, parse_mode=None, reply_markup=reply_markup)
         except Exception as e:
-            log.error("handle_nav failed: %s", e)
+            err_str = str(e)
+            if "Message is not modified" in err_str or "exactly the same" in err_str:
+                pass  # silent — no actual change needed
+            else:
+                log.error("handle_nav failed: %s", e)
 
     # ── Commands ────────────────────────────────────────────────────────────────
     async def cmd_start(self, update: Update, _: ContextTypes.DEFAULT_TYPE):
