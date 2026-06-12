@@ -54,13 +54,13 @@ trador/
 │   │       ├── wallet.py       # Wallet connect + mode + direction
 │   │       ├── pnl.py          # PnL chart menu
 │   │       └── pnl_chart.py    # Chart generator (matplotlib)
-│   ├── scanners/              # Market data scanners (no API key needed)
+│   ├── scanners/              # Market data scanners (public API — no key needed)
 │   │   ├── __init__.py
-│   │   ├── liquidation_scanner.py    # Binance WS forceOrder stream
-│   │   ├── orderbook_scanner.py     # Binance WS depth20@100ms
-│   │   ├── whale_scanner.py         # DexScreener + Binance WS trade
-│   │   ├── funding_scanner.py       # Binance REST + WS premiumIndex
-│   │   ├── volume_profile_scanner.py # Binance REST klines (POC/VAH/VAL)
+│   │   ├── liquidation_scanner.py    # Binance REST orderbook depth
+│   │   ├── orderbook_scanner.py     # Binance REST depth data
+│   │   ├── whale_scanner.py         # Binance OHLCV volume spike
+│   │   ├── funding_scanner.py       # Binance funding rate API
+│   │   ├── volume_profile_scanner.py # Binance klines (POC/VAH/VAL)
 │   │   └── smc_scanner.py           # SMC: OB/FVG/sweeps/BOS (Binance REST)
 │   ├── trading/
 │   │   ├── __init__.py
