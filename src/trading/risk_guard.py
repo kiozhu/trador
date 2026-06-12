@@ -108,6 +108,8 @@ class RiskGuard:
     def resume(self) -> None:
         """Resume normal trading after a kill."""
         self._mode = TradingMode.RESUME
+        self._consecutive_losses = 0  # Reset so next loss doesn't immediately re-kill
+        log.info("RiskGuard resumed — consecutive losses cleared")
 
     def set_sideways_mode(self, enabled: bool) -> None:
         """Enable/disable sideways market blocking (Layer 11)."""
@@ -163,7 +165,7 @@ class RiskGuard:
 
         return results
 
-    def can_trade(self, trade: dict, balance: float) -> tuple[bool, list[RiskLayerResult]]:
+    def can_trade(self, trade: dict, balance: float, mode: str = "dry_run") -> tuple[bool, list[RiskLayerResult]]:
         """Shorthand: returns (allowed, list_of_results)."""
         results = self.validate_trade(trade, balance)
         blocked = any(not r.passed for r in results)

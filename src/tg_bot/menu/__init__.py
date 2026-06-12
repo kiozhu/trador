@@ -3,6 +3,7 @@ Single entry point for ALL inline keyboard interactions.
 Dead handler systems (wallet.py, smart_mode.py) have been removed.
 """
 import asyncio
+from pathlib import Path
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 from datetime import datetime, timezone
@@ -190,27 +191,12 @@ class MenuRouter:
             api_secret = state.get("wallet_api_secret", "")
 
             import ccxt  # noqa: E402
-            from pathlib import Path
-            env_secrets = {}
-            env_path = Path("/home/ubuntu/trador/.env")
-            if env_path.exists():
-                for line in env_path.read_text().splitlines():
-                    if '=' in line:
-                        k, v = line.split('=', 1)
-                        env_secrets[k] = v.strip()
-
-            # Build exchange with Ed25519 support
-            ex_config = {
+            ex = ccxt.binance({
                 "apiKey": api_key,
                 "secret": api_secret,
                 "enableRateLimit": False,
                 "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
-            }
-            secret = env_secrets.get("BINANCE_API_SECRET", "")
-            if "PRIVATE KEY" in secret:
-                ex_config["secret"] = secret  # CCXT auto-detects Ed25519 from format
-
-            ex = ccxt.binance(ex_config)
+            })
 
             def _sync_emergency_stop():
                 """Sync helper — runs CCXT calls in thread, returns (cancelled, closed)."""
@@ -221,7 +207,7 @@ class MenuRouter:
                 symbols_to_check = [
                     "BTC/USDT", "ETH/USDT", "SOL/USDT", "XAU/USDT", "XAG/USDT",
                     "ZEC/USDT", "DOGE/USDT", "ADA/USDT", "VELVET/USDT",
-                    "SNDK/USDT", "HYPE/USDT", "XLM/USDT",
+                    "SNDK/USDT", "HYPE/USDT", "XLM/USDT", "CL/USDT",
                 ]
                 for sym in symbols_to_check:
                     try:
@@ -242,14 +228,15 @@ class MenuRouter:
                 try:
                     positions = ex.fetch_positions()
                     for pos in positions:
-                        raw_size = pos.get("contracts", 0)
-                        size = float(raw_size) if raw_size is not None else 0
+                        # positionAmt is signed (-0.001 = short), contracts is absolute
+                        raw = pos.get("positionAmt", pos.get("contracts", 0))
+                        size = float(raw) if raw is not None else 0
                         if size == 0:
                             continue
                         sym = pos.get("symbol", "")
                         if not sym:
                             continue
-                        # Close side is opposite of position side
+                        # Use CCXT side field directly
                         side = pos.get("side", "")
                         close_side = "buy" if side == "short" else "sell"
                         amount = abs(size)
@@ -286,6 +273,82 @@ class MenuRouter:
                 f"🔴 Stopped — {cancelled} orders cancelled, {closed} positions closed",
                 show_alert=True)
             await self._navigate_to(update, "main")
+            return
+
+        # ── Quick Actions ───────────────────────────────────────────────────
+        if data == "qa:cancel_all":
+            state = self.state_mgr.get()
+            api_key = state.get("wallet_api_key", "")
+            api_secret = state.get("wallet_api_secret", "")
+            ex = ccxt.binance({
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": False,
+                "options": {"defaultType": "future"},
+            })
+
+            def _cancel_all():
+                cancelled = 0
+                symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XAU/USDT", "XAG/USDT",
+                           "ZEC/USDT", "DOGE/USDT", "ADA/USDT", "VELVET/USDT",
+                           "SNDK/USDT", "HYPE/USDT", "XLM/USDT", "CL/USDT"]
+                for sym in symbols:
+                    try:
+                        orders = ex.fetch_open_orders(sym)
+                        for o in orders:
+                            try:
+                                ex.cancel_order(o["id"], sym)
+                                cancelled += 1
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                return cancelled
+
+            cancelled = await asyncio.to_thread(_cancel_all)
+            await query.answer(f"✅ {cancelled} orders cancelled", show_alert=True)
+            await self._navigate_to(update, "quick")
+            return
+
+        if data == "qa:close_all":
+            state = self.state_mgr.get()
+            api_key = state.get("wallet_api_key", "")
+            api_secret = state.get("wallet_api_secret", "")
+            ex = ccxt.binance({
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": False,
+                "options": {"defaultType": "future"},
+            })
+
+            def _close_all():
+                closed = 0
+                try:
+                    positions = ex.fetch_positions()
+                    for pos in positions:
+                        raw = pos.get("positionAmt", pos.get("contracts", 0))
+                        size = float(raw) if raw is not None else 0
+                        if size == 0:
+                            continue
+                        sym = pos.get("symbol", "")
+                        if not sym:
+                            continue
+                        side = pos.get("side", "")
+                        close_side = "buy" if side == "short" else "sell"
+                        amount = abs(size)
+                        try:
+                            ex.create_order(sym, "market", close_side, amount,
+                                            params={"reduceOnly": True})
+                            closed += 1
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                return closed
+
+            closed = await asyncio.to_thread(_close_all)
+            await query.answer(f"🔴 {closed} positions closed", show_alert=True)
+            await self._navigate_to(update, "quick")
             return
 
         # ── START trading ───────────────────────────────────────────────────
@@ -353,6 +416,16 @@ class MenuRouter:
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data="page:mode")]]))
                 return
             self.state_mgr.set_mode("live")
+            # Capture session start balance from real Binance
+            if self.engine:
+                import asyncio
+                try:
+                    bal = asyncio.get_event_loop().run_until_complete(self.engine.get_balance())
+                    session_bal = bal.get("wallet_balance", bal.get("free", 0))
+                    self.state_mgr.set("live_session_start_balance", session_bal)
+                    self.state_mgr.set("live_balance", session_bal)
+                except Exception:
+                    pass
             await query.answer("🔴 Mode: LIVE", show_alert=True)
             await self._navigate_to(update, "mode")
             return
@@ -1846,26 +1919,12 @@ class MenuRouter:
             api_key = state.get("wallet_api_key", "")
             api_secret = state.get("wallet_api_secret", "")
 
-            # Load Ed25519 secret from .env if present
-            from pathlib import Path
-            env_secrets = {}
-            env_path = Path("/home/ubuntu/trador/.env")
-            if env_path.exists():
-                for line in env_path.read_text().splitlines():
-                    if '=' in line:
-                        k, v = line.split('=', 1)
-                        env_secrets[k] = v.strip()
-
             ex_config = {
                 "apiKey": api_key,
                 "secret": api_secret,
                 "enableRateLimit": False,
                 "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
             }
-            secret = env_secrets.get("BINANCE_API_SECRET", "")
-            if "PRIVATE KEY" in secret:
-                ex_config["secret"] = secret
-
             ex = ccxt.binance(ex_config)
 
             async def _do_pos_close_all():
@@ -1894,13 +1953,13 @@ class MenuRouter:
                 # Step 2: Close all open positions
                 try:
                     positions = await asyncio.to_thread(ex.fetch_positions)
-                    live_positions = [p for p in positions if float(p.get("contracts", 0)) != 0]
+                    live_positions = [p for p in positions if float(p.get("contracts", 0) or 0) != 0]
                     for pos in live_positions:
                         sym = pos.get("symbol", "")
                         if not sym:
                             continue
                         try:
-                            contracts = float(pos.get("contracts", 0))
+                            contracts = float(pos.get("contracts", 0) or 0)
                             close_side = "buy" if contracts < 0 else "sell"
                             amount = abs(contracts)
                             await asyncio.to_thread(
@@ -1917,9 +1976,7 @@ class MenuRouter:
 
                 return cancelled, closed
 
-            cancelled, closed = await asyncio.to_thread(
-                __import__("asyncio").run, _do_pos_close_all()
-            )
+            cancelled, closed = await _do_pos_close_all()
 
             # Step 3: Update trade_history.json
             from utils.helpers import read_json, atomic_write_json

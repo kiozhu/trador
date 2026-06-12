@@ -35,7 +35,7 @@ Bot trading crypto futures dengan kontrol penuh via **Telegram**. Didesain untuk
 | 6 | **Focus Mode** | Max positions reached → re-scan open positions untuk amend TP/SL |
 | 7 | **Telegram-First Control** | Semua kontrol dari inline keyboard menu — tidak perlu CLI |
 | 8 | **Dry Run + Live** | Dry run balance virtual + live mode dengan uang sungguhan |
-| 9 | **Ed25519 Support** | Binance API dengan Ed25519 signature (lebih aman dari HMAC-SHA256) |
+| 9 | **HMAC-SHA256 API** | Binance API dengan HMAC-SHA256 signature (standard API key) |
 | 10 | **PM2 Process Manager** | Bot running sebagai PM2 service — auto-restart, logs, management |
 | 11 | **Zero Credentials in Git** | `.env` tidak pernah masuk Git — API keys aman |
 
@@ -46,7 +46,7 @@ Bot trading crypto futures dengan kontrol penuh via **Telegram**. Didesain untuk
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     TELEGRAM BOT                             │
-│  MenuRouter (12 pages: main, status, monitor, wallet, dll)  │
+│  MenuRouter (16 pages: main, status, monitor, wallet, quick, dll)  │
 │  Text input handlers: API key, secret, LLM key, funds       │
 └────────────────────────┬────────────────────────────────────┘
                          │
@@ -69,7 +69,7 @@ Bot trading crypto futures dengan kontrol penuh via **Telegram**. Didesain untuk
           ↓                              ↓
 ┌─────────────────────┐      ┌─────────────────────┐
 │  BINANCE FUTURES    │      │  HYPERLIQUID         │
-│  Ed25519 / HMAC     │      │  (coming soon)      │
+│  HMAC-SHA256       │      │  (coming soon)      │
 │  Real balance       │      │                     │
 └─────────────────────┘      └─────────────────────┘
 ```
@@ -144,8 +144,8 @@ pm2 show trador                                    # Status detail
 ### Environment Variables (.env)
 ```
 TELEGRAM_BOT_TOKEN=...          # Dari @BotFather
-BINANCE_API_KEY=...             # Binance API Key (Ed25519 atau HMAC-SHA256)
-BINANCE_API_SECRET=...          # Binance API Secret
+BINANCE_API_KEY=...             # Binance API Key (HMAC-SHA256)
+BINANCE_API_SECRET=...          # Binance API Secret (HMAC-SHA256)
 LLM_API_KEY=...                # MiniMax API Key (untuk LLM mode)
 LLM_BASE_URL=https://api.minimax.io  # LLM endpoint
 TELEGRAM_CHAT_ID=...            # Chat ID kamu
@@ -162,15 +162,13 @@ Bot menyediakan menu untuk input credentials langsung dari Telegram (tidak perlu
 ```
 👛 Wallet → Input API Key → ketik API key kamu
 ```
-- Simpan ke `memory/state.json` + `.env`
-- Klik 🔄 Reload Engine setelah input
+- Simpan ke `memory/state.json` + `.env` — bot auto-reload tanpa restart
 
 ### 2. Input API Secret
 ```
 👛 Wallet → Input API Secret → ketik API secret kamu
 ```
-- Support Ed25519 (format: `-----BEGIN PRIVATE KEY-----...`) dan HMAC-SHA256 (plain hex)
-- Auto-detect format berdasarkan secret pattern
+- Support HMAC-SHA256 (standard Binance API key — plain hex string)
 
 ### 3. Test Connection
 ```

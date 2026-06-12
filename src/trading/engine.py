@@ -37,10 +37,7 @@ class TradingEngine:
     def reload_credentials(self, api_key: str, api_secret: str):
         """Reload exchange credentials at runtime — for when API key/secret
         is updated via Telegram wallet menu after bot startup.
-
-        CCXT auto-detects Ed25519 vs HMAC-SHA256 based on secret format:
-          - Ed25519: secret contains "-----BEGIN PRIVATE KEY-----"
-          - HMAC-SHA256: plain hex/base64 string
+        Uses HMAC-SHA256 (standard Binance API key format).
         """
         self.api_key = api_key
         self.api_secret = api_secret
@@ -52,22 +49,17 @@ class TradingEngine:
         })
         if self.testnet:
             self.exchange.set_sandbox_mode(True)
-        log.info("Trading engine credentials reloaded (testnet=%s, ed25519=%s)",
-                 self.testnet, "PRIVATE KEY" in api_secret)
+        log.info("Trading engine credentials reloaded (testnet=%s)", self.testnet)
 
     def reload_from_env(self, env_path: str = ".env"):
         """Reload credentials from a .env file — called after wallet menu
         updates .env so the engine picks up new credentials without restart.
-
-        Ed25519 PEM keys are stored with literal \\n (escaped newlines) in .env
-        so dotenv can parse them as single-line values. Unescape when loading.
         """
         import os
         from dotenv import dotenv_values
         vals = dotenv_values(env_path)
         api_key = vals.get("BINANCE_API_KEY") or ""
-        # Unescape \\n → actual newline for Ed25519 PEM keys
-        api_secret = (vals.get("BINANCE_API_SECRET") or "").replace("\\n", "\n")
+        api_secret = vals.get("BINANCE_API_SECRET") or ""
         self.reload_credentials(api_key, api_secret)
 
     async def fetch_ohlcv(self, symbol: str, timeframe: str = "15m", limit: int = 100) -> list:
@@ -175,20 +167,26 @@ class TradingEngine:
     async def get_balance(self) -> dict[str, float]:
         try:
             balance = await asyncio.to_thread(self.exchange.fetch_balance)
-            # Try 'future' section first, fall back to top-level USDT keys
-            futures = balance.get("future", {})
-            if futures:
-                total = futures.get("total", {}).get("USDT", 0)
-                used = futures.get("used", {}).get("USDT", 0)
-                free = futures.get("free", {}).get("USDT", 0)
-            else:
-                total = balance.get("total", {}).get("USDT", 0)
-                used = balance.get("used", {}).get("USDT", 0)
-                free = balance.get("free", {}).get("USDT", 0)
-            return {"total": total, "used": used, "free": free, "unrealized_pnl": 0}
+            # Binance CCXT returns:
+            #   balance["USDT"] = {"free": 0.23, "used": 12.70, "total": 12.93}
+            #   balance["info"] = {"totalWalletBalance": 12.90, "totalUnrealizedProfit": 0.038, "availableBalance": 0.23}
+            usdt = balance.get("USDT", {})
+            info = balance.get("info", {})
+            
+            wallet_balance = float(info.get("totalWalletBalance", 0) or 0)
+            unrealized_pnl = float(info.get("totalUnrealizedProfit", 0) or 0)
+            available = float(info.get("availableBalance", 0) or usdt.get("free", 0))
+            
+            return {
+                "total": wallet_balance + unrealized_pnl,  # margin balance
+                "used": float(usdt.get("used", 0) or 0),
+                "free": available,
+                "unrealized_pnl": unrealized_pnl,
+                "wallet_balance": wallet_balance,  # actual wallet (before unrealized PnL)
+            }
         except Exception as e:
             log.error("Failed to fetch balance: %s", e)
-            return {"total": 0, "used": 0, "free": 0, "unrealized_pnl": 0}
+            return {"total": 0, "used": 0, "free": 0, "unrealized_pnl": 0, "wallet_balance": 0}
 
     async def get_positions(self) -> list[dict]:
         try:
@@ -196,17 +194,31 @@ class TradingEngine:
             # Filter for active positions with non-zero size
             active = []
             for p in positions:
-                size = float(p.get("contracts", 0) or p.get("positionAmt", 0))
+                # positionAmt is signed (-0.001 = short), contracts is absolute (0.001)
+                # Use positionAmt if available, otherwise use contracts
+                position_amt = p.get("positionAmt")
+                if position_amt is not None:
+                    size = float(position_amt)
+                else:
+                    size = float(p.get("contracts", 0))
+                
                 if size != 0:
+                    # CCXT provides normalized side ('short' or 'long') — use it directly
+                    raw_side = p.get("side", "").lower()
+                    if raw_side in ("short", "sell"):
+                        side = "SHORT"
+                    else:
+                        side = "LONG"
+                    
                     active.append({
                         "symbol": p.get("symbol"),
-                        "side": "LONG" if size > 0 else "SHORT",
+                        "side": side,
                         "size": abs(size),
-                        "entry_price": float(p.get("entryPrice", 0)),
-                        "current_price": float(p.get("markPrice", 0)),
-                        "leverage": int(p.get("leverage", 1)),
-                        "pnl_usd": float(p.get("unrealizedPnl", 0)),
-                        "pnl_pct": float(p.get("percentage", 0)),
+                        "entry_price": float(p.get("entryPrice", 0) or 0),
+                        "current_price": float(p.get("markPrice", 0) or 0),
+                        "leverage": int(p.get("leverage", 1) or 1),
+                        "pnl_usd": float(p.get("unrealizedPnl", 0) or 0),
+                        "pnl_pct": float(p.get("percentage", 0) or 0),
                     })
             return active
         except Exception as e:
@@ -319,7 +331,6 @@ class TradingEngine:
     async def get_open_orders(self, symbol: str | None = None) -> list[dict]:
         """Get all open orders, optionally filtered by symbol."""
         try:
-            # ccxt: fetch_open_orders(symbol, ...)
             fetch = getattr(self.exchange, "fetch_open_orders", None)
             if fetch:
                 orders = await asyncio.to_thread(fetch, symbol, limit=100)
@@ -327,6 +338,43 @@ class TradingEngine:
             return []
         except Exception as e:
             log.error("Get open orders failed: %s", e)
+            return []
+
+    async def get_trade_history(self, symbol: str | None = None, since_ms: int | None = None, limit: int = 100) -> list[dict]:
+        """Fetch recent trades from Binance (for a symbol or all common symbols)."""
+        try:
+            if symbol:
+                trades = await asyncio.to_thread(
+                    self.exchange.fetch_my_trades, symbol, since=since_ms, limit=limit
+                )
+            else:
+                # Fetch for common symbols
+                symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+                           "ADA/USDT", "LINK/USDT", "AVAX/USDT"]
+                all_trades = []
+                for sym in symbols:
+                    try:
+                        t = await asyncio.to_thread(
+                            self.exchange.fetch_my_trades, sym, since=since_ms, limit=limit
+                        )
+                        all_trades.extend(t)
+                    except Exception:
+                        pass
+                trades = sorted(all_trades, key=lambda x: x.get("timestamp", 0), reverse=True)[:limit]
+
+            return [{
+                "id": str(t.get("id", "")),
+                "symbol": t.get("symbol", ""),
+                "side": t.get("side", "").upper(),
+                "amount": float(t.get("amount", 0) or 0),
+                "price": float(t.get("price", 0) or 0),
+                "timestamp": t.get("timestamp", 0),
+                "order_id": str(t.get("order", "")) if t.get("order") else None,
+                "fee": float(t.get("fee", {}).get("cost", 0) or 0),
+                "fee_currency": t.get("fee", {}).get("currency", "USDT"),
+            } for t in trades]
+        except Exception as e:
+            log.error("Failed to fetch trade history: %s", e)
             return []
 
     async def cancel_all_orders(self, symbol: str | None = None) -> dict:

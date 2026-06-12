@@ -276,7 +276,10 @@ class KellySizer:
         Very small balances → reduce (fees eat profits).
         Very large balances → slight reduction (risk management).
         """
-        if balance < 100:
+        if balance < 20:
+            # Testing range ($6-$20): scale linearly 0→20, minimum 0.4
+            return max(0.4, balance / 20 * weight)
+        elif balance < 100:
             return max(0.2, balance / 500 * weight)
         elif balance > 100_000:
             return max(0.5, 1.0 - (balance - 100_000) / 500_000 * weight)

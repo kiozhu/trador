@@ -2,6 +2,7 @@
 import asyncio
 import signal
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -273,7 +274,6 @@ class Trador:
                         stale = [t for t in data["trades"]
                                  if t.get("status") == "open" and t.get("symbol") not in real_symbols]
                         if stale:
-                            from datetime import datetime, timezone
                             for t in data["trades"]:
                                 if t.get("status") == "open" and t.get("symbol") not in real_symbols:
                                     t["status"] = "closed"
@@ -285,40 +285,13 @@ class Trador:
                         else:
                             log.info("[startup] No stale positions")
 
-                        # Direction 2: extra positions — on Binance but not in file → close them
+                        # Direction 2: extra positions — on Binance but not in file → track in state
+                        # DO NOT close or mark as closed — they are real Binance positions
                         extra_symbols = real_symbols - trade_symbols
                         if extra_symbols:
-                            log.info("[startup] Closing %d extra positions not in file: %s",
-                                     len(extra_symbols), extra_symbols)
-                            from datetime import datetime, timezone
-                            for pos in live_positions:
-                                sym = pos.get("symbol", "")
-                                if sym not in extra_symbols:
-                                    continue
-                                raw_size = pos.get("contracts", 0)
-                                size = float(raw_size) if raw_size is not None else 0
-                                if size == 0:
-                                    continue
-                                # Close side is opposite of position side
-                                side = pos.get("side", "")
-                                close_side = "buy" if side == "short" else "sell"
-                                amount = abs(size)
-                                try:
-                                    ex.create_order(sym, "market", close_side, amount,
-                                                    params={"reduceOnly": True})
-                                    log.info("[startup] Closed extra position %s (%s %s, side=%s)",
-                                             sym, close_side, amount, side)
-                                except Exception as e:
-                                    log.error("[startup] Close %s failed: %s", sym, e)
-                            # Mark all extra as closed in file
-                            for t in data["trades"]:
-                                if t.get("status") == "open" and t.get("symbol") in extra_symbols:
-                                    t["status"] = "closed"
-                                    t["exit_reason"] = "exchange_sync"
-                                    t["close_timestamp"] = datetime.now(timezone.utc).isoformat()
-                            with open(file_path, "w") as f:
-                                json.dump(data, f, indent=2)
-                            log.info("[startup] Marked extra positions closed in file")
+                            log.info("[startup] Extra Binance positions (not in file): %s", extra_symbols)
+                            # These are tracked in state via _sync_risk_state every scan cycle
+                            # No file update needed — they are legitimate open positions
                         else:
                             log.info("[startup] No extra positions on Binance")
 

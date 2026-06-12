@@ -55,8 +55,7 @@ class WalletPage(MenuPage):
             "  Hyperliquid: sign with wallet\n\n"
 
             "🔏 Credential Type:\n"
-            "  Ed25519 (recommended) atau HMAC-SHA256\n"
-            "  Bot auto-detect format dari secret.\n\n"
+            "  HMAC-SHA256 (standard Binance API key)\n\n"
 
             "⚠️ Keys disimpan lokal only.\n"
             "JANGAN share secret ke siapapun!"

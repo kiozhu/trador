@@ -2,6 +2,7 @@
 Phase 1: Integrated scanner-driven signal generation + rule-based scoring.
 """
 import asyncio
+import math
 import aiohttp
 from datetime import datetime, timezone
 from typing import Any
@@ -189,8 +190,10 @@ class AutoTrader:
         if mode == "live" and self.engine and self.engine.exchange:
             try:
                 bal = await self.engine.get_balance()
-                live_balance = bal.get("free", 0)
+                # Use wallet_balance (total in wallet) not free (available for new orders)
+                live_balance = bal.get("wallet_balance", bal.get("free", 0))
                 self.state_mgr.set("live_balance", live_balance)
+                self.state_mgr.set("live_unrealized_pnl", bal.get("unrealized_pnl", 0))
                 # Also update total/used for reference
                 self.state_mgr.set("live_balance_total", bal.get("total", live_balance))
                 self.state_mgr.set("live_balance_used", bal.get("used", 0))
@@ -215,6 +218,73 @@ class AutoTrader:
         else:
             open_pos = self.trade_log.get_active(mode=mode) if self.trade_log else []
             open_count = len(open_pos)
+
+        # ── LIVE MODE: Fetch trade history from Binance for stats ──────────────
+        if mode == "live" and self.engine and self.engine.exchange:
+            try:
+                from datetime import datetime, timezone, timedelta
+                since_ms = int((datetime.now(timezone.utc) - timedelta(hours=24)).timestamp() * 1000)
+                trades = await self.engine.get_trade_history(since_ms=since_ms, limit=100)
+                
+                # Store raw trades for WR calculation
+                self.state_mgr.set("_recent_binance_trades", trades)
+                
+                # Track last processed trade ID to avoid duplicates
+                last_trade_id_key = "_last_binance_trade_id"
+                last_id = state.get(last_trade_id_key, None)
+                
+                # Filter to only new trades (after last processed)
+                new_trades = [t for t in trades if last_id is None or int(t.get("id", 0)) > int(last_id)] if last_id else trades
+                
+                if new_trades and self.rolling_buffer:
+                    # Pair trades by symbol to compute wins/losses (FIFO)
+                    from collections import defaultdict
+                    by_symbol = defaultdict(list)
+                    for t in new_trades:
+                        by_symbol[t.get("symbol", "")].append(t)
+                    
+                    wins = losses = total_pnl = 0
+                    for sym, sym_trades in by_symbol.items():
+                        buys = [t for t in sym_trades if t.get("side", "").upper() in ("BUY", "LONG")]
+                        sells = [t for t in sym_trades if t.get("side", "").upper() in ("SELL", "SHORT")]
+                        n_pairs = min(len(buys), len(sells))
+                        for i in range(n_pairs):
+                            entry = buys[i].get("price", 0)
+                            exit_p = sells[i].get("price", 0)
+                            qty = min(buys[i].get("amount", 0), sells[i].get("amount", 0))
+                            pnl = (exit_p - entry) * qty
+                            fee = buys[i].get("fee", 0) + sells[i].get("fee", 0)
+                            net_pnl = pnl - fee
+                            total_pnl += net_pnl
+                            won = net_pnl > 0
+                            if won:
+                                wins += 1
+                            else:
+                                losses += 1
+                            # Record in rolling buffer
+                            self.rolling_buffer.add({
+                                "symbol": sym,
+                                "side": "LONG" if buys[i].get("side", "").upper() in ("BUY", "LONG") else "SHORT",
+                                "pnl_pct": net_pnl,
+                                "pnl_usd": net_pnl,
+                                "entry_price": entry,
+                                "exit_price": exit_p,
+                                "size": qty,
+                                "leverage": 1,
+                                "duration_ms": sells[i].get("timestamp", 0) - buys[i].get("timestamp", 0),
+                            })
+                    
+                    # Update last processed trade ID
+                    if trades:
+                        max_id = max(int(t.get("id", 0)) for t in trades)
+                        self.state_mgr.set(last_trade_id_key, max_id)
+                    
+                    self.state_mgr.set("live_total_trades", wins + losses)
+                    self.state_mgr.set("live_session_pnl", round(total_pnl, 4))
+                    log.debug("[_sync_risk_state] Binance trades: %d wins, %d losses, PnL=$%.4f",
+                              wins, losses, total_pnl)
+            except Exception as e:
+                log.warning("[_sync_risk_state] trade history fetch failed: %s", e)
 
         # Get rolling stats
         stats = self.rolling_buffer.get_stats()
@@ -473,7 +543,7 @@ class AutoTrader:
                 "market_regime": self._market_regime,
                 "atr_pct": candidate.get("atr_pct", 0),
             }
-            can_trade, risk_results = self.risk_guard.can_trade(trade_for_check, balance)
+            can_trade, risk_results = self.risk_guard.can_trade(trade_for_check, balance, mode=mode)
             if not can_trade:
                 blocked = [r for r in risk_results if not r.passed]
                 log.warning("RiskGuard blocked %s %s: %s",
@@ -1077,6 +1147,12 @@ class AutoTrader:
 
     async def _execute_trade(self, signal: dict, strategy: dict, mode: str):
         """Execute a scored trade signal."""
+        # CRITICAL: Double-check trading is enabled before any live execution
+        state = self.state_mgr.get()
+        if not state.get("trading_enabled", False):
+            log.debug("[_execute_trade] Skipped — trading disabled")
+            return
+        
         symbol = signal["symbol"]
         side = signal["side"]
         entry = signal["entry_price"]
@@ -1372,24 +1448,40 @@ class AutoTrader:
         """Print end-of-cycle summary."""
         state = self.state_mgr.get()
         perf = self.perf.get(mode=mode) if self.perf else {}
-        bal = state.get(f"{mode}_balance", 0)
+        
+        # ── LIVE MODE: use real Binance data ────────────────────────────────
+        if mode == "live":
+            live_bal = state.get("live_balance", 0)
+            session_start = state.get("live_session_start_balance", live_bal)
+            pnl_pct = ((live_bal - session_start) / session_start * 100) if session_start > 0 else 0
+            open_pos = state.get("open_positions", [])
+            unreal_pnl = sum(p.get("pnl_usd", 0) for p in open_pos)
+            # Compute WR from live_total_trades and live_wins (hardcoded from Binance history)
+            total_trades = state.get("live_total_trades", 0)
+            won_trades = state.get("live_wins", 0)
+            live_pnl = state.get("live_session_pnl", 0)
+            win_r = (won_trades / total_trades) if total_trades > 0 else 0
+            # For live mode, show actual live_session_pnl (in USD), not % which is always 0 when session_start = live_bal
+            pnl_val = live_pnl if mode == "live" else perf.get("total_pnl", 0)
+            log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            log.info("  📊 CYCLE DONE  |  regime=%s  |  candidates=%d  |  executed=%d",
+                    regime, len(candidates), trades_executed)
+            log.info("  💰 Balance: $%.2f  |  Total PnL: %+.2f  |  Unreal: %+.2f  |  Trades: %d  |  WR: %.0f%%",
+                    live_bal, pnl_val, unreal_pnl, total_trades, win_r * 100 if win_r else 0)
+            log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            return
+        
+        # ── DRY-RUN MODE: use perf + rolling buffer ───────────────────────
         stats = perf.get("stats", {})
+        bal = state.get(f"{mode}_balance", 10000)
         win_r = stats.get("win_rate", 0)
         total = stats.get("total_trades", 0)
-        log.info(
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        )
-        log.info(
-            "  📊 CYCLE DONE  |  regime=%s  |  candidates=%d  |  executed=%d",
-            regime, len(candidates), trades_executed,
-        )
-        log.info(
-            "  💰 Balance: $%.2f  |  Total PnL: %+.2f%%  |  Win Rate: %.0f%%  |  Trades: %d",
-            bal, stats.get("total_pnl_pct", 0), win_r * 100 if win_r else 0, total,
-        )
-        log.info(
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        )
+        log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        log.info("  📊 CYCLE DONE  |  regime=%s  |  candidates=%d  |  executed=%d",
+                regime, len(candidates), trades_executed)
+        log.info("  💰 Balance: $%.2f  |  Total PnL: %+.2f%%  |  Win Rate: %.0f%%  |  Trades: %d",
+                bal, stats.get("total_pnl_pct", 0), win_r * 100 if win_r else 0, total)
+        log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     async def _simulate_trade(self, trade: dict) -> dict:
         """Simulate trade with real Binance price data + accurate fees.
