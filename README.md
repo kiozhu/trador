@@ -35,9 +35,9 @@ Bot trading crypto futures dengan kontrol penuh via **Telegram**. Didesain untuk
 | 6 | **Focus Mode** | Max positions reached → re-scan open positions untuk amend TP/SL |
 | 7 | **Telegram-First Control** | Semua kontrol dari inline keyboard menu — tidak perlu CLI |
 | 8 | **Dry Run + Live** | Dry run balance virtual + live mode dengan uang sungguhan |
-| 9 | **HMAC-SHA256 API** | Binance API dengan HMAC-SHA256 signature (standard API key) |
-| 10 | **PM2 Process Manager** | Bot running sebagai PM2 service — auto-restart, logs, management |
-| 11 | **Zero Credentials in Git** | `.env` tidak pernah masuk Git — API keys aman |
+| 9 | **Dual API Signature** | HMAC-SHA256 + Ed25519 (auto-detect dari format secret) |
+| 10 | **Startup Position Sync** | Auto-detect extra Binance positions saat bot start |
+| 11 | **Re-scan Amend TP/SL** | Re-scan open positions → amend TP/SL via Binance API berdasarkan MTF signal terbaru |
 
 ---
 
@@ -83,7 +83,8 @@ Bot trading crypto futures dengan kontrol penuh via **Telegram**. Didesain untuk
 - `_sync_risk_state()` every cycle (not just on trade)
 - Consume `_risk_action` dari Telegram (kill/resume buttons)
 - MTF bypass: score ≥ 80 langsung execute tanpa LLM call
-- Focus mode: max positions reached → `_focus_open_positions()` untuk amend
+- **TP/SL dikirim ke Binance** saat open position (stopLossPrice + takeProfitPrice)
+- **Re-scan + amend**: `focus_open_positions()` → MTF re-analyze → amend TP/SL via Binance API
 
 ### MTF Analyzer (Multi-Timeframe)
 3 timeframe analysis per symbol:
@@ -204,12 +205,17 @@ Bot menyediakan menu untuk input credentials langsung dari Telegram (tidak perlu
 | 📋 Positions | Semua posisi terbuka |
 | 📜 History | Log trade dengan filter |
 | ⚙️ Strategy | Toggle 11 strategi ON/OFF |
-| 📡 Monitor | Status scanner + regime |
+| 📡 Monitor | Status scanner + regime + navigation ke pages baru |
 | 🔧 Settings | Interval, max positions, daily loss limit |
 | 👛 Wallet | API key/secret, test connection, reload engine |
 | 🛡️ Risk Engine | Volatility, Kelly, VaR, stress test, kill/resume |
 | 🔴 Mode | Switch Dry Run / Live |
 | 🤖 Smart | LLM key + base URL |
+| 📋 Orders | List open orders + cancel per order + cancel all |
+| ⚙️ Leverage | Set leverage 1x–125x per symbol |
+| 📍 Margin | Switch ISOLATED / CROSSED per position |
+| 💰 Funding | Funding rates per symbol |
+| ⏱️ Countdown | Emergency auto-cancel timer (countdownCancelAll) |
 | ❓ Help | Bantuan |
 
 ### Navigasi
@@ -218,6 +224,11 @@ Bot menyediakan menu untuk input credentials langsung dari Telegram (tidak perlu
 ├── [📊 Status]   → page:status
 ├── [📋 Positions] → page:positions
 ├── [📡 Monitor] → page:monitor
+│   ├── [📋 Orders] → page:orders
+│   ├── [⚙️ Leverage] → page:leverage
+│   ├── [💰 Funding] → page:funding
+│   ├── [📍 Margin] → page:margin_type
+│   └── [⏱️ Countdown] → page:countdown
 ├── [⚙️ Strategy] → page:strategy
 ├── [🔧 Settings] → page:settings
 ├── [👛 Wallet] → page:wallet
@@ -336,19 +347,40 @@ Kelly Criterion dengan 8 adjustment factors:
 
 Output: estimated loss ($), severity emoji, recommendations.
 
-### Risk Engine UI
+### 5. Funding page
 ```
-🛡️ Risk Engine
-
-📊 Volatility: [NORMAL]  size: 1.0x
-📈 Kelly: 15.2%  confidence: 72%
-📉 VaR (95%): $85.20
-📅 Daily PnL: +$12.50
-💼 Positions: 3 open
-
-🛑 Kill Switch    ▶️ Resume Trading
-💪 Stress Test    🔄 Reset Daily
+💰 Funding Rates (per symbol)
+BTC/USDT: -0.0001%
+ETH/USDT: +0.0002%
+SOL/USDT: +0.0010%
+...
 ```
+Refresh via button → fetch fresh rates dari Binance API.
+
+### 6. Countdown page (Emergency Cancel Timer)
+```
+⏱️ Emergency Countdown
+Set timer → all orders auto-cancelled after X seconds
+5s | 10s | 30s | 60s | [STOP]
+```
+Binance `countdownCancelAll` API — jika bot hang atau perlu emergency stop semua order.
+
+---
+
+## 🔄 Focus Mode — Re-scan & Amend
+
+Ketika max positions reached, bot re-scans open positions:
+
+1. **MTF Analysis** — run multi-timeframe analysis per symbol
+2. **Signal evaluation**:
+   - `PnL >= 1.5%` → lock profit (move SL to breakeven)
+   - `PnL <= -1.0%` → breakeven (move SL slightly above/below entry)
+   - `bullish + score>=70` → widen TP (ATR distance * score factor)
+   - `bearish + score>=60` → tighten SL (protect position)
+3. **Amend via Binance API** — `exchange.edit_order()` dengan new SL/TP
+4. **Update trade log** — record amendment with timestamp
+
+**Trigger**: Klik 🔄 Re-scan Open di Monitor page, atau auto-trigger saat max positions.
 
 ---
 
@@ -385,12 +417,14 @@ Output: estimated loss ($), severity emoji, recommendations.
 ### Current Track Record
 ```
 Mode: LIVE (real money at risk)
-Balance: ~$12.95 USDT free
-Open positions: 0 (all closed via emergency stop)
+Balance: ~$12.36 USDT (Binance sync)
+Open positions: 1 ETH/USDT SHORT (tracked in state)
 Trading: enabled
+Regime: sideway (last scan)
 ```
 
-**Status**: Bot stable — emergency stop tested and working ✅
+**Status**: Bot running — TP/SL sent to Binance on open ✅
+**Emergency stop**: tested ✅
 
 ---
 
@@ -478,7 +512,7 @@ trador/
 │   ├── tg_bot/
 │   │   ├── menu/
 │   │   │   ├── __init__.py   # MenuRouter + _handle_text_input
-│   │   │   └── pages/        # 12 page classes
+│   │   │   └── pages/        # 21 page classes (incl. 5 new: orders, leverage, margin_type, funding, countdown)
 │   │   └── handlers/         # Quick actions, pnl, positions
 │   ├── memory/
 │   │   ├── state.py      # StateManager (atomic write)

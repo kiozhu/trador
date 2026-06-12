@@ -14,7 +14,8 @@ from .pages import (
     MainPage, StatusPage, HelpPage, PositionsPage, StrategyPage,
     HistoryPage, BalancePage, WalletPage, SmartPage, QuickPage,
     ModePage, DirectionPage, MonitorPage, SettingsPage, RiskPage,
-    RiskConfigPage,
+    RiskConfigPage, OrdersPage, LeveragePage, MarginTypePage,
+    FundingPage, CountdownPage,
 )
 
 
@@ -47,6 +48,11 @@ class MenuRouter:
             "settings": SettingsPage(state_mgr),
             "risk": RiskPage(state_mgr, None),  # auto_trader set post-startup via set_auto_trader
             "risk_config": RiskConfigPage(state_mgr),
+            "orders": OrdersPage(state_mgr, exchange),
+            "leverage": LeveragePage(state_mgr, exchange),
+            "margin_type": MarginTypePage(state_mgr, exchange),
+            "funding": FundingPage(state_mgr, exchange),
+            "countdown": CountdownPage(state_mgr, exchange),
         }
         self.nav = MenuNavigator(pages)
 
@@ -467,6 +473,137 @@ class MenuRouter:
                 log.error("rescan_open failed: %s", e)
                 await query.answer(f"❌ Re-scan failed: {e}", show_alert=True)
             await self._navigate_to(update, "monitor")
+            return
+
+        # ── Leverage handlers ───────────────────────────────────────────
+        elif data.startswith("lev_apply:"):
+            parts = data.split(":")
+            if len(parts) >= 3:
+                sym, lv = parts[1], int(parts[2])
+                if self.engine:
+                    try:
+                        await asyncio.to_thread(self.engine.exchange.set_leverage, lv, sym)
+                        self.state_mgr.set(f"leverage_{sym}", lv)
+                        await query.answer(f"⚙️ {sym}: {lv}x set", show_alert=True)
+                    except Exception as e:
+                        await query.answer(f"❌ Set leverage failed: {e}", show_alert=True)
+                else:
+                    await query.answer("❌ Engine not ready", show_alert=True)
+                await self._navigate_to(update, "leverage")
+            return
+
+        # ── Margin type handlers ───────────────────────────────────────
+        elif data.startswith("mt_isolated:"):
+            sym = data.split(":")[1]
+            if self.engine:
+                try:
+                    await asyncio.to_thread(
+                        self.engine.exchange.set_margin_type, sym, "ISOLATED"
+                    )
+                    await query.answer(f"📍 {sym}: ISOLATED", show_alert=True)
+                except Exception as e:
+                    await query.answer(f"❌ {e}", show_alert=True)
+            await self._navigate_to(update, "margin_type")
+            return
+
+        elif data.startswith("mt_crossed:"):
+            sym = data.split(":")[1]
+            if self.engine:
+                try:
+                    await asyncio.to_thread(
+                        self.engine.exchange.set_margin_type, sym, "CROSSED"
+                    )
+                    await query.answer(f"📍 {sym}: CROSSED", show_alert=True)
+                except Exception as e:
+                    await query.answer(f"❌ {e}", show_alert=True)
+            await self._navigate_to(update, "margin_type")
+            return
+
+        # ── Order cancel handlers ───────────────────────────────────────
+        elif data.startswith("ocancel:"):
+            parts = data.split(":")
+            if len(parts) >= 2:
+                oid, sym = parts[1], parts[2]
+                if self.engine:
+                    try:
+                        await asyncio.to_thread(self.engine.exchange.cancel_order, oid, sym)
+                        await query.answer(f"❌ {sym} order cancelled", show_alert=True)
+                    except Exception as e:
+                        await query.answer(f"❌ Cancel failed: {e}", show_alert=True)
+                await self._navigate_to(update, "orders")
+            return
+
+        elif data == "ocancel_all":
+            if self.engine:
+                state = self.state_mgr.get()
+                api_key = state.get("wallet_api_key", "")
+                api_secret = state.get("wallet_api_secret", "")
+                if api_key and api_secret:
+                    import ccxt
+                    ex = ccxt.binance({
+                        "apiKey": api_key, "secret": api_secret,
+                        "enableRateLimit": True,
+                        "options": {"defaultType": "future", "warnOnFetchOpenOrdersWithoutSymbol": False},
+                    })
+                    # Cancel all orders per symbol
+                    for sym in ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT",
+                                "DOGE/USDT", "ADA/USDT", "XAU/USDT", "XAG/USDT"]:
+                        try:
+                            orders = await asyncio.to_thread(ex.fetch_open_orders, sym)
+                            for o in orders:
+                                await asyncio.to_thread(ex.cancel_order, o["id"], sym)
+                        except Exception:
+                            pass
+                    await query.answer("🗑️ All orders cancelled", show_alert=True)
+                else:
+                    await query.answer("❌ No API keys", show_alert=True)
+            await self._navigate_to(update, "orders")
+            return
+
+        # ── Funding refresh ──────────────────────────────────────────────
+        elif data == "funding_refresh":
+            state = self.state_mgr.get()
+            api_key = state.get("wallet_api_key", "")
+            api_secret = state.get("wallet_api_secret", "")
+            if api_key and api_secret:
+                try:
+                    import ccxt
+                    ex = ccxt.binance({
+                        "apiKey": api_key, "secret": api_secret,
+                        "enableRateLimit": True,
+                        "options": {"defaultType": "future"},
+                    })
+                    rates = {}
+                    for sym in ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT",
+                                "DOGE/USDT", "ADA/USDT", "LINK/USDT", "AVAX/USDT",
+                                "XAU/USDT", "XAG/USDT"]:
+                        try:
+                            mark = ex.fetch_mark_price(sym)
+                            rates[sym] = mark.get("fundingRate", 0) or 0
+                        except Exception:
+                            pass
+                    self.state_mgr.set("funding_rates", rates)
+                    await query.answer("💰 Funding rates updated", show_alert=True)
+                except Exception as e:
+                    await query.answer(f"❌ {e}", show_alert=True)
+            await self._navigate_to(update, "funding")
+            return
+
+        # ── Countdown handlers ───────────────────────────────────────────
+        elif data.startswith("cd_set:"):
+            sec = int(data.split(":")[1])
+            self.state_mgr.set("countdown_timer_sec", sec)
+            self.state_mgr.set("countdown_active", True)
+            self.state_mgr.set("countdown_start_ts", asyncio.get_event_loop().time())
+            await query.answer(f"⏱️ Countdown: {sec}s", show_alert=True)
+            await self._navigate_to(update, "countdown")
+            return
+
+        elif data == "cd_stop":
+            self.state_mgr.set("countdown_active", False)
+            self.state_mgr.set("countdown_timer_sec", 0)
+            await query.answer("🛑 Countdown stopped", show_alert=True)
+            await self._navigate_to(update, "countdown")
             return
 
         else:
@@ -2048,7 +2185,7 @@ class MenuRouter:
                         bal = ex.fetch_balance({"type": "future"})
                         self.state_mgr.set("live_balance", bal.get("USDT", {}).get("total", 0))
                         # Sync positions
-                        live_positions = [p for p in ex.fetch_positions() if float(p.get("contracts", 0)) != 0]
+                        live_positions = [p for p in ex.fetch_positions() if p.get("side") in ("long", "short")]
                         self._sync_positions_from_binance(live_positions, mode="live")
                         log.info("[Monitor] Synced %d positions from Binance", len(live_positions))
                     except Exception as e:

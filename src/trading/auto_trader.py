@@ -1413,7 +1413,11 @@ class AutoTrader:
                     binance_side,
                     qty,          # absolute qty computed from fresh price
                     limit_price,  # fresh current price
-                    params={"reduceOnly": False},
+                    params = {
+                        "reduceOnly": False,
+                        "stopLossPrice": round(sl_price, 8),
+                        "takeProfitPrice": round(tp_price, 8),
+                    }
                 )
 
                 # Only log/record if order actually succeeded (result has id)
@@ -1693,105 +1697,147 @@ class AutoTrader:
     # FOCUS MODE — re-analyze open positions when max positions reached
     # ═══════════════════════════════════════════════════════════════════════
     async def focus_open_positions(self) -> int:
-        """Re-analyze open positions, amend TP/SL based on new MTF signals.
+            """Re-analyze open positions, amend TP/SL based on new MTF signals.
         
-        Returns number of positions reviewed.
-        """
-        state = self.state_mgr.get()
-        mode = state.get("mode", "dry_run")
-        open_pos = self.trade_log.get_active(mode=mode) if self.trade_log else []
+            Flow:
+            1. Run MTF analysis per symbol → get signal + score
+            2. Calculate new SL/TP based on new signals + entry price
+            3. Edit SL/TP order on Binance via exchange.edit_order()
+            4. Log amendment result
         
-        if not open_pos:
-            log.info("[Focus] No open positions to review")
-            return 0
+            Returns number of positions reviewed.
+            """
+            state = self.state_mgr.get()
+            mode = state.get("mode", "dry_run")
+            open_pos = self.trade_log.get_active(mode=mode) if self.trade_log else []
         
-        # Import MTF locally (not stored as self._mtf in this version)
-        from .mtf_analyzer import MultiTimeframeAnalyzer
-        mtf = MultiTimeframeAnalyzer()
+            if not open_pos:
+                log.info("[Focus] No open positions to review")
+                return 0
         
-        now = datetime.now(timezone.utc)
-        reviewed = 0
+            # Import MTF locally
+            from .mtf_analyzer import MultiTimeframeAnalyzer
+            mtf = MultiTimeframeAnalyzer()
         
-        for pos in open_pos:
-            sym = pos.get("symbol", "")
-            side = pos.get("side", "")
-            entry_price = pos.get("entry_price", 0)
+            now = datetime.now(timezone.utc)
+            reviewed = 0
+        
+            for pos in open_pos:
+                sym = pos.get("symbol", "")
+                side = pos.get("side", "")
+                entry_price = pos.get("entry_price", 0)
+                order_id = pos.get("order_id")
+                current_sl = pos.get("stop_loss")
+                current_tp = pos.get("take_profit")
             
-            if not sym or not side:
-                continue
+                if not sym or not side or not entry_price:
+                    continue
             
-            # Check cooldown — skip if reviewed within 5 minutes
-            last_reviewed = pos.get("last_reviewed_at")
-            if last_reviewed:
+                # Check cooldown — skip if reviewed within 5 minutes
+                last_reviewed = pos.get("last_reviewed_at")
+                if last_reviewed:
+                    try:
+                        last_ts = datetime.fromisoformat(last_reviewed.replace("Z", "+00:00"))
+                        if (now - last_ts).total_seconds() < 300:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+            
+                # Run MTF analysis for this symbol
                 try:
-                    last_ts = datetime.fromisoformat(last_reviewed.replace("Z", "+00:00"))
-                    if (now - last_ts).total_seconds() < 300:
-                        continue  # still in cooldown
-                except (ValueError, TypeError):
-                    pass
+                    analysis = await mtf.analyze(sym)
+                    signal = analysis.get("signal", "neutral")
+                    score = analysis.get("score", 0)
+                    regime = analysis.get("regime", "unknown")
+                    new_sl, new_tp = None, None
+                except Exception as e:
+                    log.error("[Focus] MTF analysis failed for %s: %s", sym, e)
+                    continue
             
-            # Run MTF analysis for this symbol
-            try:
-                analysis = await mtf.analyze(sym)
-                signal = analysis.get("signal", "neutral")
-                score = analysis.get("score", 0)
-                regime = analysis.get("regime", "unknown")
-            except Exception as e:
-                log.error("[Focus] MTF analysis failed for %s: %s", sym, e)
-                continue
+                # Update last_reviewed_at
+                pos["last_reviewed_at"] = now.isoformat()
             
-            # Update last_reviewed_at
-            pos["last_reviewed_at"] = now.isoformat()
-            self.trade_log.add(pos)
+                # Calculate current PnL %
+                pnl_pct = pos.get("pnl_pct", 0)
             
-            # Calculate current PnL %
-            pnl_pct = pos.get("pnl_pct", 0)
+                # Determine new SL/TP based on signal + score + regime
+                if side.upper() == "LONG":
+                    if pnl_pct >= 1.5:
+                        # Near-TP: lock profit — move SL to breakeven
+                        new_sl = round(entry_price, 8)
+                        log.info("[Focus] %s LONG lock profit: SL=%.4f (PnL=+%.2f%%)", sym, new_sl, pnl_pct)
+                    elif pnl_pct <= -1.0:
+                        # Near-SL: breakeven — SL slightly above entry
+                        new_sl = round(entry_price * 1.001, 8)
+                        log.info("[Focus] %s LONG breakeven: SL=%.4f (PnL=%.2f%%)", sym, new_sl, pnl_pct)
+                    elif signal == "bullish" and score >= 70:
+                        # Strong bullish: widen TP (more profit target)
+                        # TP = entry + (ATR-based distance) * score factor
+                        atr = analysis.get("atr_pct", 0.02)
+                        tp_distance = atr * (1 + score / 100)
+                        new_tp = round(entry_price * (1 + tp_distance), 8)
+                        new_sl = round(entry_price * (1 - atr * 0.5), 8)  # tighter SL in strong signal
+                        log.info("[Focus] %s LONG bullish extend: TP=%.4f (score=%d, regime=%s)", sym, new_tp, score, regime)
+                    elif signal == "bearish" and score >= 60:
+                        # Weak bearish: tighten SL, keep TP
+                        new_sl = round(entry_price * 0.995, 8)
+                        log.info("[Focus] %s LONG bearish tighten: SL=%.4f (score=%d)", sym, new_sl, score)
             
-            # Determine amendment action
-            action_taken = None
+                elif side.upper() == "SHORT":
+                    if pnl_pct >= 1.5:
+                        new_sl = round(entry_price, 8)
+                        log.info("[Focus] %s SHORT lock profit: SL=%.4f (PnL=+%.2f%%)", sym, new_sl, pnl_pct)
+                    elif pnl_pct <= -1.0:
+                        new_sl = round(entry_price * 0.999, 8)
+                        log.info("[Focus] %s SHORT breakeven: SL=%.4f (PnL=%.2f%%)", sym, new_sl, pnl_pct)
+                    elif signal == "bearish" and score >= 70:
+                        atr = analysis.get("atr_pct", 0.02)
+                        tp_distance = atr * (1 + score / 100)
+                        new_tp = round(entry_price * (1 - tp_distance), 8)
+                        new_sl = round(entry_price * (1 + atr * 0.5), 8)
+                        log.info("[Focus] %s SHORT bearish extend: TP=%.4f (score=%d, regime=%s)", sym, new_tp, score, regime)
+                    elif signal == "bullish" and score >= 60:
+                        new_sl = round(entry_price * 1.005, 8)
+                        log.info("[Focus] %s SHORT bullish tighten: SL=%.4f (score=%d)", sym, new_sl, score)
             
-            if side.upper() == "LONG":
-                # Near-TP: lock profit (move SL to breakeven) when PnL > 1.5%
-                if pnl_pct >= 1.5:
-                    new_sl = entry_price
-                    action_taken = f"lock_profit@+{pnl_pct:.2f}%"
-                    log.info("[Focus] %s LONG lock profit: SL=%.4f (entry=%.4f, PnL=+%.2f%%)",
-                             sym, new_sl, entry_price, pnl_pct)
-                
-                # Near-SL: move SL to breakeven when PnL < -1.0%
-                elif pnl_pct <= -1.0:
-                    new_sl = entry_price * 1.001  # small buffer
-                    action_taken = f"breakeven@{pnl_pct:.2f}%"
-                    log.info("[Focus] %s LONG breakeven: SL=%.4f (PnL=%.2f%%)",
-                             sym, new_sl, pnl_pct)
-                
-                # Strong bullish signal: widen TP
-                elif signal == "bullish" and score >= 75:
-                    log.info("[Focus] %s LONG strong bullish (%s, score=%d) — hold", sym, regime, score)
+                # Only amend if we have new SL/TP and an order_id
+                if (new_sl or new_tp) and order_id and mode == "live":
+                    try:
+                        # Build edit params — only include what changed
+                        params = {}
+                        if new_sl:
+                            params["stopLossPrice"] = new_sl
+                        if new_tp:
+                            params["takeProfitPrice"] = new_tp
+                    
+                        # Use edit_order to modify SL/TP on Binance
+                        result = await asyncio.to_thread(
+                            self.engine.exchange.edit_order,
+                            order_id, sym, "STOP_MARKET", "sell", 0,  # type/side/qty irrelevant for SL/TP edit
+                            params=params
+                        )
+                        log.info("[Focus] ✅ Amended %s: SL=%.4f TP=%.4f (was SL=%.4f TP=%.4f)",
+                                 sym, new_sl or current_sl, new_tp or current_tp,
+                                 current_sl or 0, current_tp or 0)
+                    
+                        # Update trade_log with new SL/TP
+                        if new_sl:
+                            pos["stop_loss"] = new_sl
+                        if new_tp:
+                            pos["take_profit"] = new_tp
+                        pos["amended_at"] = now.isoformat()
+                        self.trade_log.add(pos)
+                    
+                        # Notify via Hermes
+                        if self.hermes_reporter:
+                            self.hermes_reporter.write_message(
+                                f"📝 [{sym}] Re-scan: SL amended to {new_sl or current_sl}, TP to {new_tp or current_tp}"
+                            )
+                            
+                    except Exception as e:
+                        log.error("[Focus] ❌ Failed to amend %s: %s", sym, e)
             
-            elif side.upper() == "SHORT":
-                # Near-TP: lock profit when PnL > 1.5%
-                if pnl_pct >= 1.5:
-                    new_sl = entry_price
-                    action_taken = f"lock_profit@+{pnl_pct:.2f}%"
-                    log.info("[Focus] %s SHORT lock profit: SL=%.4f (entry=%.4f, PnL=+%.2f%%)",
-                             sym, new_sl, entry_price, pnl_pct)
-                
-                # Near-SL: move SL to breakeven when PnL < -1.0%
-                elif pnl_pct <= -1.0:
-                    new_sl = entry_price * 0.999
-                    action_taken = f"breakeven@{pnl_pct:.2f}%"
-                    log.info("[Focus] %s SHORT breakeven: SL=%.4f (PnL=%.2f%%)",
-                             sym, new_sl, pnl_pct)
-                
-                # Strong bearish signal: hold
-                elif signal == "bearish" and score >= 75:
-                    log.info("[Focus] %s SHORT strong bearish (%s, score=%d) — hold", sym, regime, score)
-            
-            if action_taken:
-                log.info("[Focus] %s %s %s — action: %s", sym, side, pnl_pct, action_taken)
-            
-            reviewed += 1
+                reviewed += 1
         
-        log.info("[Focus] Reviewed %d/%d open positions", reviewed, len(open_pos))
-        return reviewed
+            log.info("[Focus] Reviewed %d positions", reviewed)
+            return reviewed

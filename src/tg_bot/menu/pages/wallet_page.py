@@ -31,7 +31,7 @@ class WalletPage(MenuPage):
                             api_secret = v.strip()
 
         connected = state.get("wallet_connected", False) and bool(api_key)
-        exchange = state.get("exchange", "binance")
+        exchange = state.get("exchange") or "binance"
 
         # Show connection status
         if api_key and connected:

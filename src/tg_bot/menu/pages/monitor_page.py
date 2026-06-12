@@ -135,6 +135,11 @@ class MonitorPage(MenuPage):
         keyboard = [
             [InlineKeyboardButton("🔄 Refresh", callback_data="page:monitor"),
              InlineKeyboardButton("🔄 Re-scan Open", callback_data="action:rescan_open")],
-            [InlineKeyboardButton("◀️ Back to Menu", callback_data="page:main")],
+            [InlineKeyboardButton("📋 Orders", callback_data="page:orders"),
+             InlineKeyboardButton("⚙️ Leverage", callback_data="page:leverage")],
+            [InlineKeyboardButton("💰 Funding", callback_data="page:funding"),
+             InlineKeyboardButton("📍 Margin", callback_data="page:margin_type")],
+            [InlineKeyboardButton("⏱️ Countdown", callback_data="page:countdown"),
+             InlineKeyboardButton("◀️ Back to Menu", callback_data="page:main")],
         ]
         return text, InlineKeyboardMarkup(keyboard)

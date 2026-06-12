@@ -15,6 +15,11 @@ from .monitor_page import MonitorPage
 from .settings_page import SettingsPage, LLM_PROVIDERS
 from .risk_page import RiskPage
 from .risk_config_page import RiskConfigPage
+from .orders_page import OrdersPage, OrderDetailPage
+from .leverage_page import LeveragePage, LeverageSetPage
+from .margin_type_page import MarginTypePage
+from .funding_page import FundingPage
+from .countdown_page import CountdownPage
 
 __all__ = [
     "MainPage", "StatusPage", "HelpPage",
@@ -22,6 +27,8 @@ __all__ = [
     "BalancePage", "WalletPage", "SmartPage",
     "QuickPage", "ModePage", "DirectionPage",
     "MonitorPage", "SettingsPage", "RiskPage",
-    "RiskConfigPage",
+    "RiskConfigPage", "OrdersPage", "OrderDetailPage",
+    "LeveragePage", "LeverageSetPage",
+    "MarginTypePage", "FundingPage", "CountdownPage",
     "LLM_PROVIDERS",
 ]

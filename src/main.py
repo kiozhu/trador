@@ -260,7 +260,7 @@ class Trador:
                         "options": {"defaultType": "future"},
                     })
                     live_positions = [p for p in ex.fetch_positions()
-                                      if float(p.get("size", 0) or p.get("contracts", 0)) != 0]
+                                      if p.get("side") in ("long", "short")]
                     real_symbols = {p.get("symbol") for p in live_positions}
                     log.info("[startup] Binance real positions: %d (%s)", len(live_positions), real_symbols)
 
@@ -286,12 +286,31 @@ class Trador:
                             log.info("[startup] No stale positions")
 
                         # Direction 2: extra positions — on Binance but not in file → track in state
-                        # DO NOT close or mark as closed — they are real Binance positions
+                        # DO NOT close — they are real Binance positions
                         extra_symbols = real_symbols - trade_symbols
                         if extra_symbols:
                             log.info("[startup] Extra Binance positions (not in file): %s", extra_symbols)
-                            # These are tracked in state via _sync_risk_state every scan cycle
-                            # No file update needed — they are legitimate open positions
+                            # Build open_positions list from real Binance positions
+                            extra_positions = [
+                                {
+                                    "symbol": p.get("symbol"),
+                                    "side": "SHORT" if p.get("side", "").lower() == "short" else "LONG",
+                                    "size": p.get("contracts", 0),
+                                    "entry_price": float(p.get("entryPrice", 0) or 0),
+                                    "current_price": float(p.get("markPrice", 0) or 0),
+                                    "leverage": int(p.get("leverage", 1) or 1),
+                                    "pnl_usd": float(p.get("unrealizedPnl", 0) or 0),
+                                    "pnl_pct": float(p.get("percentage", 0) or 0),
+                                    "opened_at": p.get("datetime", datetime.now(timezone.utc).isoformat()),
+                                    "status": "open",
+                                }
+                                for p in live_positions
+                                if p.get("symbol") in extra_symbols
+                            ]
+                            state = self.state_mgr.get()
+                            state["open_positions"] = extra_positions
+                            self.state_mgr.set("open_positions", extra_positions)
+                            log.info("[startup] Tracked %d extra positions in state", len(extra_positions))
                         else:
                             log.info("[startup] No extra positions on Binance")
 

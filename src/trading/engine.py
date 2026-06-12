@@ -415,10 +415,13 @@ class TradingEngine:
             pos_side = None
             for p in positions:
                 if p.get("symbol", "").replace("/", "") == symbol.replace("/", ""):
-                    size = p.get("contracts", 0) or p.get("size", 0)
+                    # CCXT Binance: contracts is ABSOLUTE (always positive), side is 'long' or 'short'
+                    # Use 'side' field for direction, 'contracts' for absolute amount
+                    raw_side = p.get("side", "").lower()
+                    size = float(p.get("contracts", 0) or 0)
                     if size != 0:
-                        pos_size = abs(float(size))
-                        pos_side = "SHORT" if float(size) < 0 else "LONG"
+                        pos_size = size
+                        pos_side = "SHORT" if raw_side == "short" else "LONG"
                         break
             
             if pos_size <= 0:
