@@ -2,6 +2,7 @@
 Single entry point for ALL inline keyboard interactions.
 Dead handler systems (wallet.py, smart_mode.py) have been removed.
 """
+import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 from datetime import datetime, timezone
@@ -1757,20 +1758,61 @@ async def _handle_dir_callback(update, _, state_mgr):
 async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Route free-text input to appropriate handler based on last markup."""
     text = update.message.text.strip()
-    router: MenuRouter = context._bot_data.get("menu_router")
+    log.info("[DEBUG] _handle_text_input called: text=%s", text[:20])
+    router: MenuRouter = context.bot_data.get("menu_router")
     if not router:
+        log.warning("[DEBUG] no router in bot_data!")
         return
 
     state = router.state_mgr.get()
     pending = state.get("pending_input", "")
+    log.info("[DEBUG] pending_input=%s", pending)
+
+    # ALWAYS reply to confirm handler fires
+    try:
+        await update.message.reply_text(f"📩 Handler fired! pending='{pending}'", parse_mode=None)
+        log.info("[DEBUG] reply sent OK")
+    except Exception as e:
+        log.error("[DEBUG] reply FAILED: %s", e)
+        return  # Don't continue if reply fails
 
     if pending == "llm_api_key":
+        log.info("[DEBUG] llm_api_key handler: text='%s'", text[:20])
+        router.state_mgr.set("pending_input", "")  # Clear FIRST so user always gets reply
         router.state_mgr.set("llm_api_key", text)
-        router.state_mgr.set("pending_input", "")
         await update.message.reply_text(
             f"✅ LLM API Key saved!\n\n"
             f"Key: {text[:8]}...\n\n"
             "Tekan TEST di menu Settings untuk verify.",
+            parse_mode=None,
+        )
+        return
+
+    if pending == "wallet_api_key":
+        log.info("[DEBUG] wallet_api_key handler: text='%s'", text[:20])
+        # Clear pending FIRST — reply must always send even if .env sync fails
+        router.state_mgr.set("pending_input", "")
+        router.state_mgr.set("wallet_api_key", text)
+        _sync_binance_creds_to_env(text, router.state_mgr.get().get("wallet_api_secret", ""))
+        await update.message.reply_text(
+            f"✅ API Key saved!\n\n"
+            f"Key: {text[:8]}...\n\n"
+            "Sekarang input API Secret, atau klik ◀️ Back.",
+            parse_mode=None,
+        )
+        return
+
+    if pending == "wallet_api_secret":
+        log.info("[DEBUG] wallet_api_secret handler: text='%s'", text[:20])
+        api_key = router.state_mgr.get().get("wallet_api_key", "")
+        # Clear pending_input FIRST — reply must always send regardless of .env sync outcome
+        router.state_mgr.set("pending_input", "")
+        router.state_mgr.set("wallet_api_secret", text)
+        _sync_binance_creds_to_env(api_key, text)
+        await update.message.reply_text(
+            f"✅ API Secret saved!\n\n"
+            f"Key: {api_key[:8]}...\n\n"
+            "Klik 🔄 Reload Engine, lalu 🧪 Test Connection.",
             parse_mode=None,
         )
         return
@@ -1812,9 +1854,9 @@ async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text("❌ API key kosong")
             return
 
-        # Auto-detect provider and save to state + .env
-        router.state_mgr.set("llm_api_key", api_key)
+        # Clear pending FIRST — reply must always send
         router.state_mgr.set("pending_input", "")
+        router.state_mgr.set("llm_api_key", api_key)
 
         if "sk-" in api_key:
             provider = "openai"
@@ -1838,9 +1880,9 @@ async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not url.startswith("http"):
             await update.message.reply_text("❌ URL harus mulai dengan http:// atau https://")
             return
+        router.state_mgr.set("pending_input", "")  # Clear FIRST so user always gets reply
         router.state_mgr.set("llm_base_url", url)
         router.state_mgr.set("llm_provider", "custom")
-        router.state_mgr.set("pending_input", "")
         await update.message.reply_text(f"✅ Base URL saved!\n\n{url}", parse_mode=None)
         return
 
@@ -1849,8 +1891,8 @@ async def _handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not model:
             await update.message.reply_text("❌ Model name kosong")
             return
+        router.state_mgr.set("pending_input", "")  # Clear FIRST so user always gets reply
         router.state_mgr.set("llm_model", model)
-        router.state_mgr.set("pending_input", "")
         await update.message.reply_text(f"✅ Model name saved!\n\nModel: {model}", parse_mode=None)
         return
 

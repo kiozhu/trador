@@ -146,7 +146,7 @@ class Trador:
 
             # ── No button match — check if there's a pending input ───────────
             # Route to menu router's _handle_text_input for API keys, model names, etc.
-            router = context._bot_data.get("menu_router")
+            router = context.bot_data.get("menu_router")
             if router:
                 state = router.state_mgr.get()
                 pending = state.get("pending_input", "")

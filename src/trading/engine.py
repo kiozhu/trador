@@ -226,13 +226,33 @@ class TradingEngine:
             Amount: if <= 100, treated as percentage of balance (2.1 = 2.1%).
                    if > 100, treated as absolute quantity (e.g. 0.05 BTC).
             """
+            # ── Validate & adjust leverage to exchange max ─────────────────────
+            try:
+                exchange_info = await asyncio.to_thread(
+                    self.exchange.fetch_leverage_tiers, symbol
+                )
+                # Find max allowed leverage for this symbol's tier
+                max_lev = 20  # conservative default
+                for tier in (exchange_info or []):
+                    if str(symbol).replace("/", "") in str(tier):
+                        max_lev = min(max_lev, int(tier.get("maxLeverage", 20)))
+                if leverage > max_lev:
+                    log.warning("Leverage %d > max %d for %s, capping", leverage, max_lev, symbol)
+                    leverage = max_lev
+            except Exception:
+                pass  # ignore — use requested leverage
+
             # Convert percentage to actual quantity if amount is a percentage
             # amount <= 100 means it's a % of balance (e.g. 2.1 = 2.1% of balance)
             # amount > 100 means it's an absolute quantity (e.g. 0.05 BTC)
             if amount <= 100:
-                balance = self.get_balance()
-                if price and price > 0:
-                    amount = (balance * amount / 100) / price
+                bal = await self.get_balance()
+                if isinstance(bal, dict):
+                    bal_total = bal.get("total", 0) or bal.get("free", 0) or bal.get("USDT", {}).get("total", 0)
+                else:
+                    bal_total = float(bal) if bal else 0
+                if price and price > 0 and bal_total > 0:
+                    amount = (bal_total * amount / 100) / price
                 else:
                     amount = 0.001  # fallback minimum
 
